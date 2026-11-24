@@ -95,8 +95,8 @@ async function api(path, options={}) {
   return body;
 }
 
-function Brand({collapsed=false}) {
-  return <div className="brand-lockup"><div className="brand-symbol"><ListChecks size={20} strokeWidth={2.4}/></div>{!collapsed&&<div className="brand-name">TASKXVS</div>}</div>;
+function Brand({collapsed=false,onClick}) {
+  return <button type="button" className="brand-lockup brand-toggle" onClick={onClick} aria-label={collapsed?"Expand sidebar":"Collapse sidebar"} title={collapsed?"Expand sidebar":"Collapse sidebar"}><span className="brand-symbol"><ListChecks size={20} strokeWidth={2.4}/></span>{!collapsed&&<span className="brand-name">TASKXVS</span>}</button>;
 }
 function Button({children, variant="primary", size="normal", className="", ...props}) {
   return <button className={`button button-${variant} button-${size} ${className}`} {...props}>{children}</button>;
@@ -388,7 +388,7 @@ function UserManager({users,businesses,onClose,onSave,onDelete,onToggle}) {
   </Modal>;
 }
 
-function WhatsAppCloudSettings({onClose,notify}) {
+function WorkspaceSettings({onClose,notify,emailConfigured}) {
   const [status,setStatus]=useState({status:"disconnected",connected:false,qr_data_url:""});
   const [loading,setLoading]=useState(true);
   const [busy,setBusy]=useState(false);
@@ -414,15 +414,20 @@ function WhatsAppCloudSettings({onClose,notify}) {
   }
   const connected=status.status==="connected";
   const pairing=status.status==="qr"&&Boolean(status.qr_data_url);
-  return <Modal title="WhatsApp notifications" subtitle="Connect the dedicated sender to the free TaskXVS cloud worker." onClose={onClose} wide>
-    <div className="whatsapp-cloud-settings">
+  const paused=Boolean(status.last_error);
+  return <Modal title="Settings" subtitle="Manage workspace connections and notification services." onClose={onClose} wide>
+    <div className="workspace-settings">
+      <div className="settings-section-heading"><strong>Connections</strong><span>Workspace integrations are visible to the owner only.</span></div>
+      <div className="settings-integration-card"><span className="settings-integration-icon"><Mail size={19}/></span><div className="settings-integration-copy"><strong>Email notifications</strong><span>Task updates and business notification emails through Resend.</span></div><span className={emailConfigured?"settings-connection-state is-connected":"settings-connection-state"}>{emailConfigured?"Configured":"Not configured"}</span></div>
+      <div className="settings-section-heading settings-section-heading-spaced"><strong>WhatsApp notifications</strong><span>Dedicated sender and cloud connection status.</span></div>
+      <div className="whatsapp-cloud-settings">
       <div className={connected?"whatsapp-cloud-card connected":"whatsapp-cloud-card pending"}>
         <div className="whatsapp-cloud-symbol"><MessageCircle size={21}/></div>
         <div className="whatsapp-cloud-copy">
-          <strong>{connected?"WhatsApp sender connected":pairing?"Scan to connect WhatsApp":"Cloud sender waiting"}</strong>
-          <span>{loading?"Checking cloud worker…":connected?("Connected "+(status.phone_number||"sender number")+". Messages are sent by the scheduled cloud worker."):(status.status==="error"||status.status==="logged_out")?(status.last_error||"The sender needs to be paired again."):"The free cloud worker will display a QR code when its next run starts."}</span>
+          <strong>{connected?"WhatsApp sender connected":pairing?"Scan to connect WhatsApp":paused?"Connection paused":"Cloud sender waiting"}</strong>
+          <span>{loading?"Checking cloud worker…":connected?("Connected "+(status.phone_number||"sender number")+". Messages are sent by the scheduled cloud worker."):status.last_error||(pairing?"A QR code is ready to scan.":"The free cloud worker will display a QR code when its next run starts.")}</span>
         </div>
-        <span className="provider-status">{connected?"Connected":pairing?"Pair device":"Waiting"}</span>
+        <span className="provider-status">{connected?"Connected":pairing?"Pair device":paused?"Paused":"Waiting"}</span>
       </div>
       {pairing&&<div className="whatsapp-cloud-qr">
         <strong>Link your dedicated sender once</strong>
@@ -441,6 +446,7 @@ function WhatsAppCloudSettings({onClose,notify}) {
         <Button variant="ghost" onClick={()=>{setLoading(true);api("/api/admin/whatsapp/status").then(setStatus).catch(e=>setError(e.message)).finally(()=>setLoading(false));}}>Refresh status</Button>
       </div>
       <div className="whatsapp-cloud-warning"><ShieldCheck size={17}/><p>This connection uses an unofficial WhatsApp Web protocol, not Meta's official API. WhatsApp may restrict the sender account. Use only your dedicated sender number and send notifications only to people who have opted in. Avoid bulk or unsolicited messaging.</p></div>
+      </div>
     </div>
   </Modal>;
 }
@@ -543,6 +549,8 @@ function App() {
   const [listMode,setListMode]=useState(true);
   const [sidebarCollapsed,setSidebarCollapsed]=useState(false);
   const [filtersOpen,setFiltersOpen]=useState(false);
+  const [overviewFiltersOpen,setOverviewFiltersOpen]=useState(false);
+  const [overviewFilters,setOverviewFilters]=useState({status:"all",priority:"all",sort:"deadline"});
   const [range,setRange]=useState("7");
   const [customFrom,setCustomFrom]=useState(todayDhaka());
   const [customTo,setCustomTo]=useState(addDays(todayDhaka(),7));
@@ -555,7 +563,7 @@ function App() {
   const [completionNote,setCompletionNote]=useState("");
   const [activityItems,setActivityItems]=useState([]);
   const [activityOpen,setActivityOpen]=useState(false);
-  const [whatsAppSettingsOpen,setWhatsAppSettingsOpen]=useState(false);
+  const [settingsOpen,setSettingsOpen]=useState(false);
   const [activitySeenAt,setActivitySeenAt]=useState(()=>{try{return localStorage.getItem("taskxvs_activity_seen")||"";}catch{return "";}});
   const [completionBusy,setCompletionBusy]=useState(false);
   const [toast,setToast]=useState("");
@@ -676,7 +684,28 @@ function App() {
   });
   const overdueTasks=tasks.filter(t=>isOverdue(t,today)).sort((a,b)=>a.deadline.localeCompare(b.deadline));
   const progressPercent=0;
-  const overviewTasksSorted=[...overviewTasks].sort((a,b)=>(a.deadline||"9999-12-31").localeCompare(b.deadline||"9999-12-31"));
+  const overviewTasksSorted=useMemo(()=>{
+    let result=[...overviewTasks];
+    if(overviewFilters.status==="open")result=result.filter(t=>t.status==="todo"&&!isOverdue(t,today));
+    if(overviewFilters.status==="in_progress")result=result.filter(t=>t.status==="in_progress"&&!isOverdue(t,today));
+    if(overviewFilters.status==="delayed")result=result.filter(t=>isOverdue(t,today));
+    if(overviewFilters.status==="completed")result=result.filter(t=>t.status==="done");
+    if(overviewFilters.status==="urgent")result=result.filter(t=>isOpen(t)&&(t.priority==="urgent"||isDueSoon(t,today)));
+    if(overviewFilters.priority!=="all")result=result.filter(t=>t.priority===overviewFilters.priority);
+    const order={urgent:0,high:1,normal:2,low:3};
+    result.sort((a,b)=>{
+      if(overviewFilters.sort==="newest")return (b.created_at||"").localeCompare(a.created_at||"");
+      if(overviewFilters.sort==="oldest")return (a.created_at||"").localeCompare(b.created_at||"");
+      if(overviewFilters.sort==="updated")return (b.updated_at||"").localeCompare(a.updated_at||"");
+      if(overviewFilters.sort==="deadline_latest")return (b.deadline||"0000-01-01").localeCompare(a.deadline||"0000-01-01");
+      if(overviewFilters.sort==="priority_high")return (order[a.priority]??2)-(order[b.priority]??2);
+      if(overviewFilters.sort==="priority_low")return (order[b.priority]??2)-(order[a.priority]??2);
+      if(overviewFilters.sort==="title_az")return (a.title||"").localeCompare(b.title||"");
+      if(overviewFilters.sort==="title_za")return (b.title||"").localeCompare(a.title||"");
+      return (a.deadline||"9999-12-31").localeCompare(b.deadline||"9999-12-31");
+    });
+    return result;
+  },[overviewTasks,overviewFilters,today]);
   const urgentTasks=tasks.filter(t=>isDueSoon(t,today)|| (isOpen(t)&&t.priority==="urgent")).sort((a,b)=>(a.deadline||"9999").localeCompare(b.deadline||"9999"));
   const completedTasks=overviewTasks.filter(t=>t.status==="done");
   const openTasks=overviewTasks.filter(isOpen);
@@ -705,6 +734,8 @@ function App() {
   },[tasks,active,filters,today]);
 
   function clearFilters(){setFilters({category:"",status:"",priority:"",deadlineState:"",dueFrom:"",dueTo:"",createdFrom:"",createdTo:"",sort:"deadline"});}
+  function clearOverviewFilters(){setOverviewFilters({status:"all",priority:"all",sort:"deadline"});}
+  const overviewFilterCount=(overviewFilters.status!=="all"?1:0)+(overviewFilters.priority!=="all"?1:0);
   function taskCard(t,withBusiness=false){
     const b=businesses.find(x=>x.id===t.business_id),c=categories.find(x=>x.id===t.category_id);
     const canWrite=canWriteBusiness(t.business_id);
