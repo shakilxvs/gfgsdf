@@ -278,7 +278,7 @@ function CategoryManager({business,categories,onClose,onAdd,onEdit,onDelete}) {
   </Modal>;
 }
 
-function BusinessManager({businesses,onClose,onAdd,onRename,onArchive,onDelete}) {
+function BusinessManager({businesses,emailConfigured,onClose,onAdd,onRename,onArchive,onDelete}) {
   const [name,setName]=useState("");
   const [email,setEmail]=useState("");
   const [emailEnabled,setEmailEnabled]=useState(false);
@@ -292,6 +292,7 @@ function BusinessManager({businesses,onClose,onAdd,onRename,onArchive,onDelete})
   async function saveEdit(e){e.preventDefault();setError("");try{await onRename(editing,draft);setEditing(null);}catch(err){setError(err.message);}}
   async function confirmDelete(e){e.preventDefault();if(confirmation.trim()!==deleting.name){setError("Enter the exact business name to confirm.");return;}try{await onDelete(deleting);setDeleting(null);setConfirmation("");setError("");}catch(err){setError(err.message);}}
   return <Modal title="Businesses" subtitle="Manage business details and task notifications." onClose={onClose} wide>
+    {!emailConfigured&&<div className="email-setup-notice"><MailCheck size={17}/><span><strong>Email delivery not ready</strong><small>Verify shakilxvs.com in Resend DNS to start sending business notifications.</small></span></div>}
     <form className="business-create business-create-rich" onSubmit={add}>
       <div className="category-form-heading">Add a business</div>
       <div className="form-grid">
@@ -386,6 +387,7 @@ function App() {
   const [tasks,setTasks]=useState([]);
   const [sessionUser,setSessionUser]=useState(null);
   const [users,setUsers]=useState([]);
+  const [emailConfigured,setEmailConfigured]=useState(false);
   const [active,setActive]=useState("overview");
   const [search,setSearch]=useState("");
   const [listMode,setListMode]=useState(true);
@@ -405,7 +407,7 @@ function App() {
     setLoading(true);
     try {
       const result=await api("/api/bootstrap");
-      setBusinesses(result.businesses||[]);setCategories(result.categories||[]);setTasks(result.tasks||[]);setSessionUser(result.user||null);
+      setBusinesses(result.businesses||[]);setCategories(result.categories||[]);setTasks(result.tasks||[]);setSessionUser(result.user||null);setEmailConfigured(Boolean(result.emailConfigured));
       if(result.user?.role==="owner"){const u=await api("/api/admin/users");setUsers(u.users||[]);}else{setUsers([]);}
     } finally {setLoading(false);}
   }
@@ -613,7 +615,7 @@ function App() {
     </main>
     {modal==="task"&&<TaskForm task={editingTask} businesses={writableBusinesses} categories={categories} defaultBusiness={active==="overview"?writableBusinesses[0]?.id:active} onClose={()=>setModal(null)} onSave={values=>editingTask?updateTask(editingTask,values):addTask(values)}/>}
     {modal==="categories"&&selectedBusiness&&activeCanWrite&&<CategoryManager business={selectedBusiness} categories={categories} onClose={()=>setModal(null)} onAdd={addCategory} onEdit={editCategory} onDelete={deleteCategory}/>}
-    {modal==="businesses"&&isOwner&&<BusinessManager businesses={businesses} onClose={()=>setModal(null)} onAdd={addBusiness} onRename={renameBusiness} onArchive={archiveBusiness} onDelete={deleteBusiness}/>}
+    {modal==="businesses"&&isOwner&&<BusinessManager businesses={businesses} emailConfigured={emailConfigured} onClose={()=>setModal(null)} onAdd={addBusiness} onRename={renameBusiness} onArchive={archiveBusiness} onDelete={deleteBusiness}/>}
     {modal==="users"&&isOwner&&<UserManager users={users} businesses={businesses} onClose={()=>setModal(null)} onSave={saveUser} onDelete={deleteUser} onToggle={toggleUser}/>}
     {toast&&<div className="toast-message"><Check size={15}/>{toast}</div>}
   </div>;
