@@ -1312,3 +1312,28 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
     color:#111;
   }
 }
+
+
+/* Overview uses its own badge as the active indicator in the collapsed rail.
+   Do not paint a second circular background on the parent row. */
+.sidebar.sidebar-collapsed .sidebar-overview-link,
+.sidebar.sidebar-collapsed .sidebar-overview-link.is-active,
+.sidebar.sidebar-collapsed .sidebar-overview-link:hover {
+  background:transparent !important;
+  box-shadow:none !important;
+}
+.sidebar.sidebar-collapsed .sidebar-overview-link .overview-bullet {
+  width:34px !important;
+  height:34px !important;
+  min-width:34px;
+  flex:0 0 34px !important;
+  display:grid !important;
+  place-items:center;
+  border-radius:50% !important;
+  background:#f0f0f0 !important;
+  color:#62625b !important;
+}
+.sidebar.sidebar-collapsed .sidebar-overview-link.is-active .overview-bullet {
+  background:#d5d5d0 !important;
+  color:#111 !important;
+}
