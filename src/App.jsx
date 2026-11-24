@@ -473,22 +473,36 @@ function App() {
   async function updateTask(task,values){const result=await api(`/api/tasks/${task.id}`,{method:"PATCH",body:JSON.stringify(values)});setTasks(ts=>ts.map(t=>t.id===task.id?result:t));notify("Task updated");}
   async function removeTask(task){if(!confirm(`Delete “${task.title}” permanently?`))return;await api(`/api/tasks/${task.id}`,{method:"DELETE"});setTasks(ts=>ts.filter(t=>t.id!==task.id));notify("Task deleted");}
   async function changeStatus(task,status,note="") {
-    const result=await api(`/api/tasks/${task.id}/status`,{method:"PATCH",body:JSON.stringify({status,completion_note:note,confirm_completion:status==="done"})});
+    const result=await api(`/api/tasks/${task.id}/status`,{method:"PATCH",body:JSON.stringify({status,completion_note:status==="done"?note:"",confirm_status_change:true,confirm_completion:status==="done"})});
     setTasks(ts=>ts.map(t=>t.id===task.id?result:t));
     setViewingTask(current=>current?.id===task.id?result:current);
     notify(status==="done"?"Task completed":status==="in_progress"?"Task moved to in progress":"Task reopened");
     return result;
   }
   function requestStatusChange(task,status) {
-    if(status==="done"&&task.status!=="done") { setCompletionNote(""); setCompletingTask(task); return; }
-    if(status!==task.status) changeStatus(task,status).catch(err=>notify(err.message));
+    if(!["todo","in_progress","done"].includes(status)||status===task.status)return;
+    setCompletionNote("");
+    setRequestedStatus(status);
+    setCompletingTask(task);
   }
   async function confirmCompletion() {
     if(!completingTask)return;
     setCompletionBusy(true);
-    try { await changeStatus(completingTask,"done",completionNote.trim()); setCompletingTask(null); setCompletionNote(""); }
-    catch(err){notify(err.message);}
+    try {
+      await changeStatus(completingTask,requestedStatus,requestedStatus==="done"?completionNote.trim():"");
+      setCompletingTask(null);setCompletionNote("");
+    } catch(err){notify(err.message);}
     finally{setCompletionBusy(false);}
+  }
+  async function openActivity() {
+    try {
+      const result=await api("/api/admin/activity?limit=100");
+      setActivityItems(result.events||[]);
+      setActivityOpen(true);
+      const seen=new Date().toISOString();
+      setActivitySeenAt(seen);
+      try{localStorage.setItem("taskxvs_activity_seen",seen);}catch{}
+    } catch(err){notify(err.message);}
   }
   async function addBusiness(name,notification_email,email_notifications){const b=await api("/api/businesses",{method:"POST",body:JSON.stringify({name,notification_email,email_notifications})});await refresh();setActive(b.id);notify("Business added");}
   async function renameBusiness(id,patch){const next=await api(`/api/businesses/${id}`,{method:"PATCH",body:JSON.stringify(patch)});setBusinesses(bs=>bs.map(x=>x.id===id?next:x));notify("Business updated");}
