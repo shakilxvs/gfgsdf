@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity, AlarmClock, Archive, ArrowDownWideNarrow, ArrowLeft, ArrowUpRight,
   Bell, BriefcaseBusiness, CalendarDays, Check, CheckCheck, ChevronDown,
@@ -46,6 +46,35 @@ const TIME_ZONE_OPTIONS = TIME_ZONE_VALUES.map(value=>({
   value,
   label:value==="America/New_York"?"New York · Eastern Time":value.replaceAll("_"," ").replaceAll("/"," / ")
 }));
+const TIME_ZONE_SEARCH_ALIASES = {
+  "America/New_York":"United States USA New York New York State Eastern Eastern Time",
+  "America/Detroit":"United States USA Michigan Detroit Eastern",
+  "America/Chicago":"United States USA Illinois Texas Central Central Time",
+  "America/Denver":"United States USA Colorado Mountain Mountain Time",
+  "America/Phoenix":"United States USA Arizona Phoenix Mountain",
+  "America/Los_Angeles":"United States USA California Los Angeles Pacific Pacific Time",
+  "America/Anchorage":"United States USA Alaska Anchorage",
+  "Pacific/Honolulu":"United States USA Hawaii Honolulu",
+  "America/Toronto":"Canada Ontario Toronto Eastern",
+  "America/Vancouver":"Canada British Columbia Vancouver Pacific",
+  "America/Sao_Paulo":"Brazil Brasil Sao Paulo",
+  "Europe/London":"United Kingdom UK England London GMT",
+  "Europe/Amsterdam":"Netherlands Holland Amsterdam",
+  "Europe/Paris":"France Paris",
+  "Europe/Berlin":"Germany Deutschland Berlin",
+  "Europe/Istanbul":"Turkey Türkiye Istanbul",
+  "Asia/Dubai":"United Arab Emirates UAE Dubai",
+  "Asia/Dhaka":"Bangladesh Dhaka",
+  "Asia/Kolkata":"India Kolkata Delhi Mumbai Indian Standard Time",
+  "Asia/Singapore":"Singapore",
+  "Asia/Bangkok":"Thailand Bangkok",
+  "Asia/Shanghai":"China Shanghai Beijing",
+  "Asia/Hong_Kong":"Hong Kong China",
+  "Asia/Tokyo":"Japan Tokyo",
+  "Asia/Seoul":"South Korea Korea Seoul",
+  "Australia/Sydney":"Australia Sydney New South Wales",
+  "Pacific/Auckland":"New Zealand Auckland"
+};
 
 const PRIORITIES = [
   { value:"low", label:"Low" }, { value:"normal", label:"Normal" },
@@ -412,6 +441,20 @@ function WorkspaceSettings({onClose,notify,emailConfigured}) {
   const [timezone,setTimezone]=useState("America/New_York");
   const [clockNow,setClockNow]=useState(()=>new Date());
   const [timezoneSaving,setTimezoneSaving]=useState(false);
+  const [timezonePickerOpen,setTimezonePickerOpen]=useState(false);
+  const [timezoneSearch,setTimezoneSearch]=useState("");
+  const [timezoneActiveIndex,setTimezoneActiveIndex]=useState(0);
+  const timezoneSearchInputRef=useRef(null);
+  const timezoneOptionListRef=useRef(null);
+  const filteredTimezoneOptions=useMemo(()=>{
+    const query=timezoneSearch.trim().toLocaleLowerCase();
+    if(!query)return TIME_ZONE_OPTIONS;
+    return TIME_ZONE_OPTIONS.filter(item=>{
+      const city=item.value.split("/").pop().replaceAll("_"," ");
+      const searchable=[item.label,item.value,city,TIME_ZONE_SEARCH_ALIASES[item.value]||""].join(" ").toLocaleLowerCase();
+      return searchable.includes(query);
+    });
+  },[timezoneSearch]);
   useEffect(()=>{
     let active=true;
     const refresh=()=>{
@@ -434,6 +477,52 @@ function WorkspaceSettings({onClose,notify,emailConfigured}) {
     const timer=setInterval(()=>setClockNow(new Date()),1000);
     return ()=>clearInterval(timer);
   },[]);
+  useEffect(()=>{
+    if(timezonePickerOpen){
+      setTimezoneActiveIndex(0);
+      requestAnimationFrame(()=>timezoneSearchInputRef.current?.focus());
+    }
+  },[timezonePickerOpen]);
+  useEffect(()=>{
+    if(!timezonePickerOpen)return;
+    const active=timezoneOptionListRef.current?.querySelector("[data-active='true']");
+    active?.scrollIntoView({block:"nearest"});
+  },[timezoneActiveIndex,timezonePickerOpen,filteredTimezoneOptions]);
+  function openTimezonePicker(){
+    if(timezoneSaving)return;
+    setTimezoneSearch("");
+    setTimezonePickerOpen(true);
+  }
+  function closeTimezonePicker(){
+    setTimezonePickerOpen(false);
+    setTimezoneSearch("");
+  }
+  function handleTimezoneSearchKeyDown(event){
+    if(event.key==="ArrowDown"){
+      event.preventDefault();
+      setTimezoneActiveIndex(index=>Math.min(index+1,filteredTimezoneOptions.length-1));
+    }else if(event.key==="ArrowUp"){
+      event.preventDefault();
+      setTimezoneActiveIndex(index=>Math.max(index-1,0));
+    }else if(event.key==="Home"&&filteredTimezoneOptions.length){
+      event.preventDefault();
+      setTimezoneActiveIndex(0);
+    }else if(event.key==="End"&&filteredTimezoneOptions.length){
+      event.preventDefault();
+      setTimezoneActiveIndex(filteredTimezoneOptions.length-1);
+    }else if(event.key==="Enter"){
+      event.preventDefault();
+      const selected=filteredTimezoneOptions[timezoneActiveIndex];
+      if(selected)selectTimezone(selected.value);
+    }else if(event.key==="Escape"){
+      event.preventDefault();
+      closeTimezonePicker();
+    }
+  }
+  function selectTimezone(nextTimezone){
+    closeTimezonePicker();
+    if(nextTimezone!==timezone)changeTimezone(nextTimezone);
+  }
   async function changeTimezone(nextTimezone){
     const previous=timezone;
     setTimezone(nextTimezone);
@@ -483,7 +572,71 @@ function WorkspaceSettings({onClose,notify,emailConfigured}) {
           <strong>{timeLabel}</strong>
           <small>{timezoneName}</small>
         </div>
-        <label className="field world-clock-select"><span>Time zone</span><select value={timezone} disabled={timezoneSaving} onChange={e=>changeTimezone(e.target.value)}>{TIME_ZONE_OPTIONS.map(item=><option key={item.value} value={item.value}>{item.label}</option>)}</select><small>{timezoneSaving?"Saving time zone…":"Default: New York"}</small></label>
+        <div className="field world-clock-select">
+          <span>Time zone</span>
+          <div className="timezone-picker" onKeyDown={handleTimezoneSearchKeyDown}>
+            <button
+              type="button"
+              className={`timezone-picker-trigger ${timezonePickerOpen?"is-open":""}`}
+              onClick={()=>timezonePickerOpen?closeTimezonePicker():openTimezonePicker()}
+              disabled={timezoneSaving}
+              aria-haspopup="listbox"
+              aria-expanded={timezonePickerOpen}
+              aria-label={`Selected time zone: ${timezoneName}. Search time zones`}
+            >
+              <span className="timezone-picker-trigger-copy">
+                <Search size={15}/>
+                <span>{timezoneName}</span>
+              </span>
+              <ChevronDown size={15} className={timezonePickerOpen?"timezone-picker-chevron is-open": "timezone-picker-chevron"}/>
+            </button>
+            {timezonePickerOpen&&<div className="timezone-picker-popover">
+              <div className="timezone-picker-search">
+                <Search size={15}/>
+                <input
+                  ref={timezoneSearchInputRef}
+                  type="search"
+                  value={timezoneSearch}
+                  onChange={event=>{setTimezoneSearch(event.target.value);setTimezoneActiveIndex(0);}}
+                  placeholder="Search city, country or time zone…"
+                  autoComplete="off"
+                  spellCheck="false"
+                  aria-label="Search time zones"
+                  aria-controls="timezone-picker-options"
+                  aria-activedescendant={filteredTimezoneOptions[timezoneActiveIndex] ? `timezone-option-${filteredTimezoneOptions[timezoneActiveIndex].value.replaceAll("/","-")}` : undefined}
+                />
+                {timezoneSearch&&<button type="button" className="timezone-picker-clear" onClick={()=>{setTimezoneSearch("");setTimezoneActiveIndex(0);}} aria-label="Clear search"><X size={14}/></button>}
+              </div>
+              <div className="timezone-picker-results" id="timezone-picker-options" role="listbox" aria-label="Time zones" ref={timezoneOptionListRef}>
+                {filteredTimezoneOptions.length?filteredTimezoneOptions.map((item,index)=>{
+                  const city=item.value.split("/").pop().replaceAll("_"," ");
+                  const selected=item.value===timezone;
+                  const active=index===timezoneActiveIndex;
+                  return <button
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    aria-current={selected?"true":undefined}
+                    data-active={active?"true":"false"}
+                    id={`timezone-option-${item.value.replaceAll("/","-")}`}
+                    className={`timezone-picker-option ${selected?"is-selected":""} ${active?"is-active":""}`}
+                    key={item.value}
+                    onMouseEnter={()=>setTimezoneActiveIndex(index)}
+                    onClick={()=>selectTimezone(item.value)}
+                  >
+                    <span className="timezone-picker-option-copy">
+                      <strong>{item.value==="America/New_York"?"New York · Eastern Time":city}</strong>
+                      <small>{item.value}</small>
+                    </span>
+                    {selected&&<Check size={15}/>}
+                  </button>;
+                }):<div className="timezone-picker-empty"><Search size={17}/><strong>No matching time zones</strong><span>Try a city name or an IANA zone, such as Asia/Tokyo.</span></div>}
+              </div>
+              <div className="timezone-picker-hint">Use ↑ ↓ to move · Enter to select · Esc to close</div>
+            </div>}
+          </div>
+          <small>{timezoneSaving?"Saving time zone…":timezonePickerOpen?"Search by city, country or IANA name.":"Default: New York"}</small>
+        </div>
       </div>
       <div className="settings-section-heading settings-section-heading-spaced"><strong>Connections</strong><span>Workspace integrations are visible to the owner only.</span></div>
       <div className="settings-integration-card"><span className="settings-integration-icon"><Mail size={19}/></span><div className="settings-integration-copy"><strong>Email notifications</strong><span>Task updates and business notification emails through Resend.</span></div><span className={emailConfigured?"settings-connection-state is-connected":"settings-connection-state"}>{emailConfigured?"Configured":"Not configured"}</span></div>
