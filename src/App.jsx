@@ -31,6 +31,22 @@ const ICONS = {
   Activity, Layers3, Sparkles
 };
 const COLORS = ["#d97737","#bd6c3f","#aa7955","#b86b45","#c28c49","#788d79","#927a9e","#6b8491"];
+
+const TIME_ZONE_FALLBACK = [
+  "America/New_York","America/Detroit","America/Chicago","America/Denver","America/Phoenix",
+  "America/Los_Angeles","America/Anchorage","Pacific/Honolulu","America/Toronto","America/Vancouver",
+  "America/Sao_Paulo","Europe/London","Europe/Amsterdam","Europe/Paris","Europe/Berlin",
+  "Europe/Istanbul","Asia/Dubai","Asia/Dhaka","Asia/Kolkata","Asia/Singapore","Asia/Bangkok",
+  "Asia/Shanghai","Asia/Hong_Kong","Asia/Tokyo","Asia/Seoul","Australia/Sydney","Pacific/Auckland"
+];
+const TIME_ZONE_VALUES = typeof Intl.supportedValuesOf === "function"
+  ? Intl.supportedValuesOf("timeZone")
+  : TIME_ZONE_FALLBACK;
+const TIME_ZONE_OPTIONS = TIME_ZONE_VALUES.map(value=>({
+  value,
+  label:value==="America/New_York"?"New York · Eastern Time":value.replaceAll("_"," ").replaceAll("/"," / ")
+}));
+
 const PRIORITIES = [
   { value:"low", label:"Low" }, { value:"normal", label:"Normal" },
   { value:"high", label:"High" }, { value:"urgent", label:"Urgent" }
@@ -188,7 +204,7 @@ function TaskListRow({task,category,business,today,onEdit,onDelete,onStatus,onVi
   const delayed=isOverdue(task,today);
   const statusText=displayStatus(task,today);
   return <article className={`task-row ${task.status==="done"?"task-done":""}`} role="button" tabIndex={0} onClick={onView} onKeyDown={e=>{if(e.target===e.currentTarget&&(e.key==="Enter"||e.key===" ")){e.preventDefault();onView();}}} title="Open task details">
-    <span className="task-row-category" title={category?.name||"Uncategorized"} style={{"--chip-color":category?.color||"#d97737"}}><Icon size={20}/></span>
+    <span className="task-row-category" title={category?.name||"Uncategorized"} style={{"--chip-color":category?.color||"#858585"}}><Icon size={20}/></span>
     <div className="task-row-main">
       <div className="task-row-title-line"><h3>{task.title}</h3>{business&&<span className="task-row-business">{business.name}</span>}</div>
       {task.description&&<p className="task-row-description">{task.description}</p>}
@@ -393,6 +409,9 @@ function WorkspaceSettings({onClose,notify,emailConfigured}) {
   const [loading,setLoading]=useState(true);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
+  const [timezone,setTimezone]=useState("America/New_York");
+  const [clockNow,setClockNow]=useState(()=>new Date());
+  const [timezoneSaving,setTimezoneSaving]=useState(false);
   useEffect(()=>{
     let active=true;
     const refresh=()=>{
@@ -404,6 +423,30 @@ function WorkspaceSettings({onClose,notify,emailConfigured}) {
     const timer=setInterval(refresh,5000);
     return ()=>{active=false;clearInterval(timer);};
   },[]);
+  useEffect(()=>{
+    let active=true;
+    api("/api/account").then(result=>{
+      if(active)setTimezone(result.timezone||"America/New_York");
+    }).catch(err=>{if(active)setError(err.message);});
+    return ()=>{active=false;};
+  },[]);
+  useEffect(()=>{
+    const timer=setInterval(()=>setClockNow(new Date()),1000);
+    return ()=>clearInterval(timer);
+  },[]);
+  async function changeTimezone(nextTimezone){
+    const previous=timezone;
+    setTimezone(nextTimezone);
+    setTimezoneSaving(true);setError("");
+    try{
+      const saved=await api("/api/account",{method:"PATCH",body:JSON.stringify({timezone:nextTimezone})});
+      setTimezone(saved.timezone||nextTimezone);
+      notify("World clock time zone saved");
+    }catch(err){
+      setTimezone(previous);
+      setError(err.message);
+    }finally{setTimezoneSaving(false);}
+  }
   async function test(){
     setBusy(true);setError("");
     try{
@@ -428,9 +471,21 @@ function WorkspaceSettings({onClose,notify,emailConfigured}) {
   const reconnectRequired=Boolean(status.reconnect_required);
   const reconnectReady=Boolean(status.reconnect_ready);
   const paused=Boolean(status.last_error)&&!reconnectReady;
+  const dateLabel=new Intl.DateTimeFormat("en-US",{timeZone:timezone,weekday:"long",month:"long",day:"numeric",year:"numeric"}).format(clockNow);
+  const timeLabel=new Intl.DateTimeFormat("en-US",{timeZone:timezone,hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:true}).format(clockNow);
+  const timezoneName=TIME_ZONE_OPTIONS.find(item=>item.value===timezone)?.label||timezone;
   return <Modal title="Settings" subtitle="Manage workspace connections and notification services." onClose={onClose} wide>
     <div className="workspace-settings">
-      <div className="settings-section-heading"><strong>Connections</strong><span>Workspace integrations are visible to the owner only.</span></div>
+      <div className="settings-section-heading"><strong>World clock</strong><span>See the current day, date and time in the time zone you choose.</span></div>
+      <div className="world-clock-card">
+        <div className="world-clock-face">
+          <span className="world-clock-day">{dateLabel}</span>
+          <strong>{timeLabel}</strong>
+          <small>{timezoneName}</small>
+        </div>
+        <label className="field world-clock-select"><span>Time zone</span><select value={timezone} disabled={timezoneSaving} onChange={e=>changeTimezone(e.target.value)}>{TIME_ZONE_OPTIONS.map(item=><option key={item.value} value={item.value}>{item.label}</option>)}</select><small>{timezoneSaving?"Saving time zone…":"Default: New York"}</small></label>
+      </div>
+      <div className="settings-section-heading settings-section-heading-spaced"><strong>Connections</strong><span>Workspace integrations are visible to the owner only.</span></div>
       <div className="settings-integration-card"><span className="settings-integration-icon"><Mail size={19}/></span><div className="settings-integration-copy"><strong>Email notifications</strong><span>Task updates and business notification emails through Resend.</span></div><span className={emailConfigured?"settings-connection-state is-connected":"settings-connection-state"}>{emailConfigured?"Configured":"Not configured"}</span></div>
       <div className="settings-section-heading settings-section-heading-spaced"><strong>WhatsApp notifications</strong><span>Dedicated sender and cloud connection status.</span></div>
       <div className="whatsapp-cloud-settings">
@@ -438,7 +493,7 @@ function WorkspaceSettings({onClose,notify,emailConfigured}) {
         <div className="whatsapp-cloud-symbol"><MessageCircle size={21}/></div>
         <div className="whatsapp-cloud-copy">
           <strong>{connected?"WhatsApp sender connected":pairing?"Scan to connect WhatsApp":reconnectReady?"Ready for a new WhatsApp login":reconnectRequired?"WhatsApp login needs attention":paused?"Connection paused":"Cloud sender waiting"}</strong>
-          <span>{loading?"Checking cloud worker…":connected?("Connected "+(status.phone_number||"sender number")+". Messages are sent by the scheduled cloud worker."):reconnectReady?(status.last_error||"The previous login was cleared. Start the worker workflow to generate a fresh QR code."):reconnectRequired?(status.last_error||"The linked-device session ended. Generate a fresh QR code to sign in again."):status.last_error||(pairing?"A QR code is ready to scan.":"The free cloud worker will display a QR code when its next run starts.")}</span>
+          <span>{loading?"Checking cloud worker…":connected?("Connected "+(status.phone_number||"sender number")+". Messages are sent by the automatic cloud worker."):reconnectReady?(status.last_error||"The previous login was cleared. Start the worker workflow to generate a fresh QR code."):reconnectRequired?(status.last_error||"The linked-device session ended. Generate a fresh QR code to sign in again."):status.last_error||(pairing?"A QR code is ready to scan.":"The free cloud worker will display a QR code when its next run starts.")}</span>
         </div>
         <span className="provider-status">{connected?"Connected":pairing?"Pair device":reconnectReady?"Start worker":reconnectRequired?"Login needed":paused?"Paused":"Waiting"}</span>
       </div>
@@ -454,9 +509,9 @@ function WorkspaceSettings({onClose,notify,emailConfigured}) {
         <a href="https://github.com/shakilxvs/gfgsdf/actions/workflows/taskxvs-whatsapp-worker.yml" target="_blank" rel="noreferrer">Open TaskXVS WhatsApp worker workflow <ArrowUpRight size={13}/></a>
       </div>}
       <div className="whatsapp-cloud-steps">
-        <strong>How this free setup works</strong>
-        <p>GitHub's free public-repository runner hosts the connection in scheduled sessions. Messages wait in the database queue. The worker checks every 20 minutes to preserve the free database allowance, so delivery may be delayed by up to 20 minutes while a worker session is active.</p>
-        <p>There may be short gaps between sessions or when GitHub delays a scheduled run. This is not a guaranteed 24/7 connection.</p>
+        <strong>Automatic delivery schedule</strong>
+        <p>GitHub starts the worker automatically every 6 hours (UTC). Each session runs for up to 5 hours 45 minutes and checks the message queue every 20 minutes. You do not need to start it manually for normal operation.</p>
+        <p>A short gap of about 15 minutes between sessions, plus possible GitHub scheduling delays, is expected. Manual runs are still available when you need an immediate restart. This is not a guaranteed 24/7 connection.</p>
       </div>
       {error&&<div className="form-error">{error}</div>}
       <div className="modal-actions">
@@ -471,25 +526,49 @@ function WorkspaceSettings({onClose,notify,emailConfigured}) {
 }
 
 function AccountSettings({account,onClose,onSave}) {
+  const isOwner=account?.role==="owner";
   const [number,setNumber]=useState(account?.whatsapp_number||"");
   const [enabled,setEnabled]=useState(Boolean(account?.whatsapp_notifications_enabled));
+  const [activityEmail,setActivityEmail]=useState(account?.activity_email||"shakilxvs@gmail.com");
+  const [activityEmailEnabled,setActivityEmailEnabled]=useState(account?.activity_email_enabled!==false);
+  const [deadlineRemindersEnabled,setDeadlineRemindersEnabled]=useState(account?.deadline_reminders_enabled!==false);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
   async function submit(e){
     e.preventDefault();setBusy(true);setError("");
-    try{await onSave({whatsapp_number:number,whatsapp_notifications_enabled:enabled});onClose();}
-    catch(err){setError(err.message);}
+    const patch={whatsapp_number:number,whatsapp_notifications_enabled:enabled};
+    if(isOwner){
+      patch.activity_email=activityEmail.trim();
+      patch.activity_email_enabled=activityEmailEnabled;
+      patch.deadline_reminders_enabled=deadlineRemindersEnabled;
+    }
+    try{
+      await onSave(patch);
+      onClose();
+    }catch(err){setError(err.message);}
     finally{setBusy(false);}
   }
-  return <Modal title="My account" subtitle="Add your WhatsApp contact for TaskXVS notifications." onClose={onClose}>
+  return <Modal title="My account" subtitle={isOwner?"Manage your owner email and notification preferences.":"Add your WhatsApp contact for TaskXVS notifications."} onClose={onClose}>
     <form className="profile-settings-form" onSubmit={submit}>
-      <div className="profile-account-summary"><span className="profile-account-icon"><UserRound size={19}/></span><div><strong>{account?.display_name||account?.displayName||account?.username||"Account"}</strong><small>@{account?.username||"owner"} · {account?.role==="owner"?"Workspace owner":"Team member"}</small></div></div>
+      <div className="profile-account-summary"><span className="profile-account-icon"><UserRound size={19}/></span><div><strong>{account?.display_name||account?.displayName||account?.username||"Account"}</strong><small>@{account?.username||"owner"} · {isOwner?"Workspace owner":"Team member"}</small></div></div>
+      {isOwner&&<>
+        <div className="profile-preference-section">
+          <div className="profile-preference-heading"><strong>Owner email notifications</strong><span>Private alerts for you, across every business.</span></div>
+          <label className="field"><span>Your notification email</span><input type="email" autoComplete="email" value={activityEmail} onChange={e=>setActivityEmail(e.target.value)} placeholder="shakilxvs@gmail.com" required/></label>
+          <label className="inline-check"><input type="checkbox" checked={activityEmailEnabled} onChange={e=>setActivityEmailEnabled(e.target.checked)}/> Email me whenever a task, business, category or team setting is changed</label>
+          <p className="form-hint">Activity emails show who made the change, which business was affected and the details that changed. These owner emails are not sent to team members.</p>
+          <label className="inline-check"><input type="checkbox" checked={deadlineRemindersEnabled} onChange={e=>setDeadlineRemindersEnabled(e.target.checked)}/> Send me private deadline reminders at 2 days and 1 day before a task is due</label>
+          <p className="form-hint">Each reminder groups all open tasks due on that date across your businesses into one email.</p>
+        </div>
+        <div className="profile-preference-divider"/>
+      </>}
+      <div className="profile-preference-heading"><strong>WhatsApp notifications</strong><span>Your personal WhatsApp contact and opt-in.</span></div>
       <label className="field"><span>WhatsApp contact number</span><input type="tel" inputMode="tel" autoComplete="tel" value={number} onChange={e=>setNumber(e.target.value)} placeholder="+8801XXXXXXXXX"/></label>
       <p className="form-hint">Include your country code. Example: +8801XXXXXXXXX.</p>
-      <div className={account?.whatsapp_configured?"whatsapp-connection-state connected":"whatsapp-connection-state pending"}>{account?.whatsapp_configured?<><CircleCheck size={16}/><span>The TaskXVS cloud sender is connected. Notifications can be delivered while its free worker session is online.</span></>:<><CircleAlert size={16}/><span>Your contact and opt-in will be saved now. Delivery starts after the owner pairs the dedicated sender with the TaskXVS cloud worker.</span></>}</div>
+      <div className={account?.whatsapp_configured?"whatsapp-connection-state connected":"whatsapp-connection-state pending"}>{account?.whatsapp_configured?<><CircleCheck size={16}/><span>The TaskXVS cloud sender is connected. Notifications can be delivered while its scheduled worker session is online.</span></>:<><CircleAlert size={16}/><span>Your contact and opt-in will be saved now. Delivery starts after the owner pairs the dedicated sender with the TaskXVS cloud worker.</span></>}</div>
       <label className="inline-check"><input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)}/> I agree to receive TaskXVS WhatsApp notifications on this number</label>
       {error&&<div className="form-error">{error}</div>}
-      <div className="modal-actions"><Button variant="ghost" type="button" onClick={onClose} disabled={busy}>Cancel</Button><Button disabled={busy}>{busy?"Saving…":"Save contact"}</Button></div>
+      <div className="modal-actions"><Button variant="ghost" type="button" onClick={onClose} disabled={busy}>Cancel</Button><Button disabled={busy}>{busy?"Saving…":isOwner?"Save preferences":"Save contact"}</Button></div>
     </form>
   </Modal>;
 }
@@ -676,7 +755,7 @@ function App() {
   async function saveAccount(patch) {
     const result=await api("/api/account",{method:"PATCH",body:JSON.stringify(patch)});
     setAccountDetails(current=>({...current,...result}));
-    notify("WhatsApp contact saved");
+    notify("Account preferences saved");
     return result;
   }
   async function openActivity() {

@@ -2,6 +2,8 @@ name: TaskXVS Free WhatsApp Cloud Worker
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 */6 * * *" # Every six hours (UTC); each worker session runs up to 5h 45m.
 
 concurrency:
   group: taskxvs-whatsapp-cloud-worker
