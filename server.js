@@ -330,6 +330,7 @@ async function checkDelayedTaskNotifications() {
     const claim=await pool.query("UPDATE tasks SET delayed_notified_at=now() WHERE id=$1 AND delayed_notified_at IS NULL RETURNING id",[task.id]);
     if(!claim.rowCount)continue;
     await recordSystemActivity({event_type:"task_delayed",entity_type:"task",entity_id:task.id,business_id:task.business_id,title:`Task delayed: ${task.title}`,details:{deadline:task.deadline,status:task.status}});
+    sendBusinessWhatsAppNotification(task.business_id,"Task delayed",task);
     if(task.email_notifications&&task.notification_email&&RESEND_API_KEY&&RESEND_FROM){
       const sent=await sendBusinessNotification({name:task.business_name,notification_email:task.notification_email,email_notifications:task.email_notifications},"Task delayed",task);
       if(!sent)console.error("Delayed task email could not be sent for:",task.id);
@@ -363,7 +364,8 @@ app.get("/api/bootstrap", requireAuth, async (req, res, next) => {
     res.set("Cache-Control", "no-store").json({
       businesses: businessRows, categories: categories.rows, tasks: tasks.rows,
       user: req.auth,
-      emailConfigured: Boolean(RESEND_API_KEY && RESEND_FROM)
+      emailConfigured: Boolean(RESEND_API_KEY && RESEND_FROM),
+      whatsappConfigured: WHATSAPP_CONFIGURED
     });
   } catch (e) { next(e); }
 });
@@ -647,6 +649,7 @@ app.post("/api/tasks",requireAuth,async(req,res,next)=>{
     res.status(201).json(result.rows[0]);
     const business=await businessRow(v.business_id);
     sendBusinessNotification(business,"Task added",result.rows[0]);
+    sendBusinessWhatsAppNotification(v.business_id,"Task added",result.rows[0]);
     recordActivity(req,{event_type:"task_created",entity_type:"task",entity_id:result.rows[0].id,business_id:v.business_id,title:`Added task ${result.rows[0].title}`,details:{status:result.rows[0].status,priority:result.rows[0].priority,deadline:result.rows[0].deadline}});
   }catch(e){
     if(e.code==="23503")return res.status(400).json({error:"That category does not belong to the selected business."});
@@ -674,10 +677,12 @@ app.patch("/api/tasks/:id",requireAuth,async(req,res,next)=>{
       const before={},after={};
       for(const key of keys){before[key]=existing.rows[0][key];after[key]=result.rows[0][key];}
       recordActivity(req,{event_type:"task_updated",entity_type:"task",entity_id:result.rows[0].id,business_id:result.rows[0].business_id,title:`Updated task ${result.rows[0].title}`,details:{before,after}});
+      sendBusinessWhatsAppNotification(result.rows[0].business_id,"Task updated",result.rows[0]);
     }
     if(existing.rows[0].status!=="in_progress"&&result.rows[0].status==="in_progress"){
       const business=await businessRow(v.business_id);
       sendBusinessNotification(business,"In progress",result.rows[0]);
+      sendBusinessWhatsAppNotification(v.business_id,"In progress",result.rows[0]);
     }
   }catch(e){
     if(e.code==="23503")return res.status(400).json({error:"That category does not belong to the selected business."});
@@ -706,6 +711,7 @@ app.patch("/api/tasks/:id/status",requireAuth,async(req,res,next)=>{
     const business=await businessRow(task.business_id);
     if(task.status!==status&&status==="done")sendBusinessNotification(business,"Task done",updated.rows[0]);
     else if(task.status!==status&&status==="in_progress")sendBusinessNotification(business,"In progress",updated.rows[0]);
+    if(task.status!==status)sendBusinessWhatsAppNotification(task.business_id,status==="done"?"Task done":status==="in_progress"?"In progress":"To do",updated.rows[0]);
     if(task.status!==status)recordActivity(req,{event_type:"task_status_changed",entity_type:"task",entity_id:task.id,business_id:task.business_id,title:`Changed ${task.title} to ${status==="done"?"Done":status==="in_progress"?"In progress":"To do"}`,details:{from:task.status,to:status,note:status==="done"?note:null}});
   }catch(e){next(e);}
 });
@@ -717,6 +723,7 @@ app.delete("/api/tasks/:id",requireAuth,async(req,res,next)=>{
     await pool.query("DELETE FROM tasks WHERE id=$1",[req.params.id]);
     res.json({ok:true});
     recordActivity(req,{event_type:"task_deleted",entity_type:"task",entity_id:current.rows[0].id,business_id:current.rows[0].business_id,title:`Deleted task ${current.rows[0].title}`,details:{status:current.rows[0].status,deadline:current.rows[0].deadline}});
+    sendBusinessWhatsAppNotification(current.rows[0].business_id,"Task deleted",current.rows[0]);
   }catch(e){next(e);}
 });
 
