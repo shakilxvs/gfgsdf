@@ -235,9 +235,15 @@ async function runSocketSession() {
         connected = false;
         closed = true;
         const code = update.lastDisconnect?.error?.output?.statusCode;
-        loggedOut = code === DisconnectReason.loggedOut;
+        const sessionConflict = code === DisconnectReason.connectionReplaced;
+        loggedOut = code === DisconnectReason.loggedOut || sessionConflict;
+        const disconnectMessage = sessionConflict
+          ? "WhatsApp session conflict: another linked session replaced this worker. Automatic retries are stopped to prevent a reconnect loop. Close any other active TaskXVS worker, then use Reconnect WhatsApp in owner Settings."
+          : code === DisconnectReason.loggedOut
+            ? "WhatsApp sender was logged out or unlinked from the phone. Use Reconnect WhatsApp in owner Settings to create a fresh QR login."
+            : (update.lastDisconnect?.error?.message || "WhatsApp connection closed.");
         await updateGateway(loggedOut ? "logged_out" : "disconnected", {
-          last_error: update.lastDisconnect?.error?.message || "WhatsApp connection closed."
+          last_error: disconnectMessage
         });
       }
     } catch (error) {
