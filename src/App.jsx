@@ -353,6 +353,7 @@ function UserManager({users,businesses,onClose,onSave,onDelete,onToggle}) {
     try{await onSave(editing?.id||null,data);reset();}catch(err){setError(err.message);}finally{setBusy(false);}
   }
   function setPermission(id,value){setAssignments(a=>{const n={...a};if(value)n[id]=value;else delete n[id];return n;});}
+  const assignableBusinesses=businesses.filter(b=>!b.created_by_user_id||String(b.created_by_user_id)===String(editing?.id||""));
   return <Modal title="Team access" subtitle="Create accounts and choose which businesses each person can access." onClose={onClose} wide>
     <div className="users-list">{users.map(u=><div className="user-manager-row" key={u.id}>
       <span className="user-avatar"><UserRound size={16}/></span>
@@ -371,11 +372,11 @@ function UserManager({users,businesses,onClose,onSave,onDelete,onToggle}) {
         <label className="field"><span>{editing?"New password (leave blank to keep current)":"Password (minimum 4 characters)"}</span><input type="password" value={password} onChange={e=>setPassword(e.target.value)} minLength={4} required={!editing} autoComplete="new-password"/></label>
       </div>
       <div className="assignment-heading">Business access</div>
-      <div className="assignment-list">{businesses.map(b=><div className="assignment-row" key={b.id}>
+      <div className="assignment-list">{assignableBusinesses.map(b=><div className="assignment-row" key={b.id}>
         <label><input type="checkbox" checked={Boolean(assignments[b.id])} onChange={e=>setPermission(b.id,e.target.checked?"read":null)}/><span>{b.name}</span></label>
         <select value={assignments[b.id]||""} disabled={!assignments[b.id]} onChange={e=>setPermission(b.id,e.target.value)}><option value="read">Read only</option><option value="write">Read & write</option></select>
       </div>)}</div>
-      <p className="form-hint">Read is view-only. Read & write allows task and category changes, plus creating new businesses.</p>
+      <p className="form-hint">Read is view-only. Read & write allows task and category changes, plus creating new businesses. A business created by a member stays private to that member and the owner.</p>
       {error&&<div className="form-error">{error}</div>}
       <div className="modal-actions">{editing&&<Button variant="ghost" type="button" onClick={reset}>Cancel edit</Button>}<Button disabled={busy}>{busy?"Saving…":editing?"Save member":"Create member"} <UserPlus size={15}/></Button></div>
     </form>
@@ -404,15 +405,31 @@ function TaskDetails({task,business,category,today,canWrite,onClose,onEdit,onCom
   </Modal>;
 }
 
-function CompleteTaskDialog({task,note,setNote,onCancel,onConfirm,busy}) {
-  return <Modal title="Mark task as done?" subtitle="Confirm completion and keep a note for future reference." onClose={onCancel}>
-    <div className="complete-task-dialog"><div className="complete-task-summary"><span><CheckCheck size={19}/></span><div><strong>{task.title}</strong><small>This task will remain in your task list as completed.</small></div></div>
-      <label className="field"><span>Completion note <i>Optional</i></span><textarea rows={4} maxLength={3000} value={note} onChange={e=>setNote(e.target.value)} placeholder="What was completed? Add a result, handover detail or useful context…"/></label>
-      <div className="modal-actions"><Button variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button><Button onClick={onConfirm} disabled={busy}><Check size={15}/>{busy?"Saving…":"Confirm done"}</Button></div>
+function CompleteTaskDialog({task,status,note,setNote,onCancel,onConfirm,busy}) {
+  const label=STATUSES.find(item=>item.value===status)?.label||"To do";
+  const done=status==="done";
+  return <Modal title={done?"Mark task as done?":`Change status to ${label.toLowerCase()}?`} subtitle="Confirm this status change before it is saved." onClose={onCancel}>
+    <div className="complete-task-dialog"><div className="complete-task-summary"><span>{done?<CheckCheck size={19}/>:<Activity size={19}/>}</span><div><strong>{task.title}</strong><small>{done?"This task will remain in your list as completed.":`The task will be moved to ${label.toLowerCase()}.`}</small></div></div>
+      {done&&<label className="field"><span>Completion note <i>Optional</i></span><textarea rows={4} maxLength={3000} value={note} onChange={e=>setNote(e.target.value)} placeholder="What was completed? Add a result, handover detail or useful context…"/></label>}
+      <div className="modal-actions"><Button variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button><Button onClick={onConfirm} disabled={busy}>{busy?"Saving…":done?"Confirm done":`Confirm ${label.toLowerCase()}`}</Button></div>
     </div>
   </Modal>;
 }
 
+function ActivityFeed({items,onClose}) {
+  const labels={task_created:"Task added",task_updated:"Task updated",task_status_changed:"Task status changed",task_deleted:"Task deleted",task_delayed:"Task delayed",business_created:"Business created",business_updated:"Business updated",business_archived:"Business archived",business_restored:"Business restored",business_deleted:"Business deleted",category_created:"Category created",category_updated:"Category updated",category_deleted:"Category deleted",team_member_created:"Team member created",team_member_updated:"Team member updated",team_member_disabled:"Team member disabled",team_member_enabled:"Team member enabled",team_member_deleted:"Team member deleted"};
+  return <Modal title="Workspace activity" subtitle="A private timeline of changes across all businesses and team members." onClose={onClose} wide>
+    <div className="activity-feed">
+      {items.length?items.map(item=>{
+        const detail=item.details||{};
+        const when=new Date(item.created_at).toLocaleString("en-GB",{timeZone:"Asia/Dhaka",day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
+        const fromTo=detail.from&&detail.to?`${detail.from} → ${detail.to}`:"";
+        return <article className="activity-item" key={item.id}><span className="activity-item-icon"><BellRing size={16}/></span><div className="activity-item-main"><div className="activity-item-heading"><strong>{labels[item.event_type]||item.event_type.replaceAll("_"," ")}</strong><time>{when}</time></div><p>{item.title}</p><small>{item.actor_display_name||item.actor_username}{item.business_name?` · ${item.business_name}`:""}{fromTo?` · ${fromTo}`:""}</small>{detail.note&&<div className="activity-item-note">{detail.note}</div>}</div></article>;
+      }):<div className="activity-empty"><Bell size={20}/><strong>No activity yet</strong><span>Workspace changes will appear here.</span></div>}
+    </div>
+    <div className="modal-actions"><Button variant="ghost" onClick={onClose}>Close</Button></div>
+  </Modal>;
+}
 function App() {
   const [authenticated,setAuthenticated]=useState(false);
   const [checking,setChecking]=useState(true);
