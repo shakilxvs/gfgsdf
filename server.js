@@ -202,6 +202,32 @@ app.get("/api/auth/session", async (req, res) => {
     user: auth ? { id: auth.id || null, username: auth.username, displayName: auth.displayName, role: auth.role } : null
   });
 });
+app.get("/api/account",requireAuth,async(req,res,next)=>{
+  try{
+    if(req.auth.role==="owner"){
+      const result=await pool.query("SELECT setting_value FROM workspace_settings WHERE setting_key='owner_whatsapp' LIMIT 1");
+      const value=result.rows[0]?.setting_value||{};
+      return res.set("Cache-Control","no-store").json({whatsapp_number:value.whatsapp_number||"",whatsapp_notifications_enabled:value.whatsapp_notifications_enabled!==false});
+    }
+    const result=await pool.query("SELECT whatsapp_number,whatsapp_notifications_enabled FROM users WHERE id=$1",[req.auth.id]);
+    if(!result.rowCount)return res.status(404).json({error:"Account not found."});
+    res.set("Cache-Control","no-store").json(result.rows[0]);
+  }catch(e){next(e);}
+});
+app.patch("/api/account",requireAuth,async(req,res,next)=>{
+  try{
+    const phone=normalizeWhatsAppNumber(req.body?.whatsapp_number);
+    const enabled=typeof req.body?.whatsapp_notifications_enabled==="boolean"?req.body.whatsapp_notifications_enabled:true;
+    if(req.auth.role==="owner"){
+      const value={whatsapp_number:phone||"",whatsapp_notifications_enabled:enabled};
+      await pool.query("INSERT INTO workspace_settings(setting_key,setting_value,updated_at) VALUES ('owner_whatsapp',$1::jsonb,now()) ON CONFLICT(setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value,updated_at=now()",[JSON.stringify(value)]);
+      return res.json(value);
+    }
+    const result=await pool.query("UPDATE users SET whatsapp_number=$2,whatsapp_notifications_enabled=$3,updated_at=now() WHERE id=$1 RETURNING whatsapp_number,whatsapp_notifications_enabled",[req.auth.id,phone,enabled]);
+    if(!result.rowCount)return res.status(404).json({error:"Account not found."});
+    res.json(result.rows[0]);
+  }catch(e){next(e);}
+});
 app.post("/api/auth/logout", (_req, res) => {
   clearSessionCookie(res);
   res.set("Cache-Control", "no-store").json({ ok: true });
@@ -211,6 +237,13 @@ function validEmailList(raw) {
   if (!raw) return true;
   const emails = String(raw).split(/[;,\s]+/).filter(Boolean);
   return emails.length <= 10 && emails.every(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+}
+function normalizeWhatsAppNumber(raw) {
+  const value=String(raw||"").trim();
+  if(!value)return null;
+  const normalized=value.replace(/[\s().-]/g,"");
+  if(!/^\+[1-9]\d{7,14}$/.test(normalized))throw Object.assign(new Error("Enter a WhatsApp number in international format, e.g. +8801XXXXXXXXX."),{status:400});
+  return normalized;
 }
 function escapeHtml(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 async function sendBusinessNotification(business,event,task){
@@ -300,7 +333,7 @@ app.get("/api/admin/activity",requireAuth,requireOwner,async(req,res,next)=>{
 app.get("/api/admin/users", requireAuth, requireOwner, async (_req, res, next) => {
   try {
     const result = await pool.query(`
-      SELECT u.id,u.username,u.display_name,u.email,u.active,u.created_at,
+      SELECT u.id,u.username,u.display_name,u.email,u.whatsapp_number,u.whatsapp_notifications_enabled,u.active,u.created_at,
         COALESCE(json_agg(json_build_object('business_id',a.business_id,'permission',a.permission))
           FILTER (WHERE a.business_id IS NOT NULL),'[]'::json) AS assignments
       FROM users u LEFT JOIN business_assignments a ON a.user_id=u.id
@@ -314,6 +347,8 @@ app.post("/api/admin/users", requireAuth, requireOwner, async (req, res, next) =
     const username = String(req.body?.username || "").trim();
     const displayName = String(req.body?.display_name || username).trim();
     const email = String(req.body?.email || "").trim() || null;
+    const whatsappNumber = normalizeWhatsAppNumber(req.body?.whatsapp_number);
+    const whatsappEnabled = req.body?.whatsapp_notifications_enabled !== false;
     const password = String(req.body?.password || "");
     const assignments = Array.isArray(req.body?.assignments) ? req.body.assignments : [];
     if (!/^[a-zA-Z0-9._-]{3,40}$/.test(username)) return res.status(400).json({ error: "Username must be 3–40 characters using letters, numbers, dots, underscores or hyphens." });
@@ -323,8 +358,8 @@ app.post("/api/admin/users", requireAuth, requireOwner, async (req, res, next) =
     const credentials = newPasswordRecord(password);
     await client.query("BEGIN");
     const created = await client.query(
-      "INSERT INTO users (username,display_name,email,password_salt,password_hash) VALUES ($1,$2,$3,$4,$5) RETURNING id,username,display_name,email,active",
-      [username,displayName,email,credentials.salt,credentials.hash]
+      "INSERT INTO users (username,display_name,email,whatsapp_number,whatsapp_notifications_enabled,password_salt,password_hash) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id,username,display_name,email,whatsapp_number,whatsapp_notifications_enabled,active",
+      [username,displayName,email,whatsappNumber,whatsappEnabled,credentials.salt,credentials.hash]
     );
     for (const assignment of assignments) {
       if (!["read","write"].includes(assignment.permission)) throw Object.assign(new Error("Invalid business permission."),{status:400});
@@ -351,19 +386,24 @@ app.patch("/api/admin/users/:id", requireAuth, requireOwner, async (req, res, ne
     await client.query("BEGIN");
     const existing = await client.query("SELECT id FROM users WHERE id=$1", [req.params.id]);
     if (!existing.rowCount) { await client.query("ROLLBACK"); return res.status(404).json({ error: "User not found." }); }
-    if (req.body?.display_name !== undefined || req.body?.email !== undefined || req.body?.active !== undefined) {
+    if (req.body?.display_name !== undefined || req.body?.email !== undefined || req.body?.active !== undefined || req.body?.whatsapp_number !== undefined || req.body?.whatsapp_notifications_enabled !== undefined) {
       await client.query(
         `UPDATE users SET
           display_name=COALESCE($2,display_name),
           email=CASE WHEN $3::boolean THEN $4 ELSE email END,
           active=COALESCE($5,active),
+          whatsapp_number=CASE WHEN $6::boolean THEN $7 ELSE whatsapp_number END,
+          whatsapp_notifications_enabled=COALESCE($8,whatsapp_notifications_enabled),
           token_version=CASE WHEN $5=false THEN token_version+1 ELSE token_version END
          WHERE id=$1`,
         [req.params.id,
           req.body.display_name === undefined ? null : String(req.body.display_name).trim(),
           req.body.email !== undefined,
           String(req.body.email || "").trim() || null,
-          typeof req.body.active === "boolean" ? req.body.active : null]
+          typeof req.body.active === "boolean" ? req.body.active : null,
+          req.body.whatsapp_number !== undefined,
+          normalizeWhatsAppNumber(req.body.whatsapp_number),
+          typeof req.body.whatsapp_notifications_enabled === "boolean" ? req.body.whatsapp_notifications_enabled : null]
       );
     }
     if (req.body?.password) {
@@ -385,7 +425,7 @@ app.patch("/api/admin/users/:id", requireAuth, requireOwner, async (req, res, ne
           [req.params.id,assignment.business_id,assignment.permission]);
       }
     }
-    const result=await client.query("SELECT id,username,display_name,email,active FROM users WHERE id=$1",[req.params.id]);
+    const result=await client.query("SELECT id,username,display_name,email,whatsapp_number,whatsapp_notifications_enabled,active FROM users WHERE id=$1",[req.params.id]);
     await client.query("COMMIT");
     res.json(result.rows[0]);
     const eventType=typeof req.body.active==="boolean"?(req.body.active?"team_member_enabled":"team_member_disabled"):"team_member_updated";
