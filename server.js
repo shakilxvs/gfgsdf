@@ -1202,7 +1202,11 @@ app.use((err,_req,res,_next)=>{
 initDatabase().then(()=>{
   app.listen(PORT,"0.0.0.0",()=>console.log(`TaskXVS listening on ${PORT}`));
   checkDelayedTaskNotifications().catch(error=>console.error("Delayed task check failed:",error.message));
-  const delayedTimer=setInterval(()=>checkDelayedTaskNotifications().catch(error=>console.error("Delayed task check failed:",error.message)),15*60*1000);
+  checkOwnerDeadlineReminders().catch(error=>console.error("Owner deadline reminder check failed:",error.message));
+  const delayedTimer=setInterval(()=>{
+    checkDelayedTaskNotifications().catch(error=>console.error("Delayed task check failed:",error.message));
+    checkOwnerDeadlineReminders().catch(error=>console.error("Owner deadline reminder check failed:",error.message));
+  },5*60*1000);
   delayedTimer.unref();
 }).catch(error=>{console.error("Database initialization failed:",error);process.exit(1);});
 process.on("SIGTERM",async()=>{await pool.end();process.exit(0);});
