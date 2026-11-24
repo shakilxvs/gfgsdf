@@ -154,14 +154,20 @@ async function recordActivity(req,event) {
 }
 async function recordSystemActivity(event) {
   try {
-    await pool.query(
+    const saved=await pool.query(
       `INSERT INTO activity_log
        (actor_id,actor_username,actor_display_name,event_type,entity_type,entity_id,business_id,title,details)
-       VALUES (NULL,'taskxvs-system','TaskXVS system',$1,$2,$3,$4,$5,$6::jsonb)`,
+       VALUES (NULL,'taskxvs-system','TaskXVS system',$1,$2,$3,$4,$5,$6::jsonb)
+       RETURNING id`,
       [event.event_type,event.entity_type,event.entity_id?String(event.entity_id):null,
        event.business_id?String(event.business_id):null,event.title||"Automatic workspace event",
        JSON.stringify(event.details||{})]
     );
+    const activityId=saved.rows[0]?.id;
+    if(activityId){
+      void sendOwnerActivityEmail({username:"taskxvs-system",displayName:"TaskXVS system"},event,String(activityId))
+        .catch(error=>console.error("Owner system activity email failed:",error.message));
+    }
   } catch(error) { console.error("System activity log write failed:",error.message); }
 }
 async function requireSameOrigin(req, res, next) {
@@ -455,16 +461,24 @@ async function sendOwnerActivityEmail(auth,event,activityId){
       changes.push({key:"status",label:"Status",before:activityValueLabel("from",details.from),after:activityValueLabel("to",details.to)});
     }
     if(!changes.length){
-      for(const key of ["status","priority","deadline","notification_email","email_notifications","assigned_business_count"]){
+      for(const key of ["status","priority","deadline","description","icon","color","notification_email","email_notifications","assigned_business_count"]){
         if(details[key]!==undefined)changes.push({
           key,label:ACTIVITY_FIELD_LABELS[key]||key,
           before:"",after:activityValueLabel(key,details[key])
         });
       }
-      if(Array.isArray(details.assignments))changes.push({
-        key:"assignments",label:"Business access",before:"",
-        after:details.assignments.map(item=>`${item.business_name||item.business_id}: ${item.permission}`).join(", ")
-      });
+      if(Array.isArray(details.assignments)){
+        const assignmentIds=[...new Set(details.assignments.map(item=>String(item.business_id||"")).filter(value=>/^[0-9a-f-]{36}$/i.test(value)))];
+        const assignmentNames=new Map();
+        if(assignmentIds.length){
+          const rows=await pool.query("SELECT id::text,name FROM businesses WHERE id=ANY($1::uuid[])",[assignmentIds]);
+          for(const row of rows.rows)assignmentNames.set(row.id,row.name);
+        }
+        changes.push({
+          key:"assignments",label:"Business access",before:"",
+          after:details.assignments.map(item=>`${assignmentNames.get(String(item.business_id))||item.business_name||"Business"}: ${item.permission}`).join(", ")
+        });
+      }
     }
     const categoryIds=[...new Set(changes.filter(item=>item.key==="category_id")
       .flatMap(item=>[item.before,item.after]).filter(value=>/^[0-9a-f-]{36}$/i.test(value)))];
@@ -1046,7 +1060,7 @@ app.post("/api/categories", requireAuth, async (req,res,next)=>{
       [businessId,name,icon,color]
     );
     res.status(201).json(result.rows[0]);
-    recordActivity(req,{event_type:"category_created",entity_type:"category",entity_id:result.rows[0].id,business_id:businessId,title:`Created category ${name}`,details:{icon,color}});
+    recordActivity(req,{event_type:"category_created",entity_type:"category",entity_id:result.rows[0].id,business_id:businessId,title:`Created category ${name}`,details:{icon,color,business_id:businessId}});
   }catch(e){
     if(e.code==="23505")return res.status(409).json({error:"That category already exists in this business."});
     if(e.code==="23503")return res.status(400).json({error:"The selected business does not exist."});
@@ -1108,7 +1122,7 @@ app.post("/api/tasks",requireAuth,async(req,res,next)=>{
     const business=await businessRow(v.business_id);
     sendBusinessNotification(business,"Task added",result.rows[0]);
     sendBusinessWhatsAppNotification(v.business_id,"Task added",result.rows[0]);
-    recordActivity(req,{event_type:"task_created",entity_type:"task",entity_id:result.rows[0].id,business_id:v.business_id,title:`Added task ${result.rows[0].title}`,details:{status:result.rows[0].status,priority:result.rows[0].priority,deadline:result.rows[0].deadline}});
+    recordActivity(req,{event_type:"task_created",entity_type:"task",entity_id:result.rows[0].id,business_id:v.business_id,title:`Added task ${result.rows[0].title}`,details:{status:result.rows[0].status,priority:result.rows[0].priority,deadline:result.rows[0].deadline,description:result.rows[0].description}});
   }catch(e){
     if(e.code==="23503")return res.status(400).json({error:"That category does not belong to the selected business."});
     if(e.code==="23514")return res.status(400).json({error:"Task details failed validation."});
