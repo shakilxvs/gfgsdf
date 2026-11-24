@@ -489,6 +489,7 @@ app.post("/api/categories", requireAuth, async (req,res,next)=>{
       [businessId,name,icon,color]
     );
     res.status(201).json(result.rows[0]);
+    recordActivity(req,{event_type:"category_created",entity_type:"category",entity_id:result.rows[0].id,business_id:businessId,title:`Created category ${name}`,details:{icon,color}});
   }catch(e){
     if(e.code==="23505")return res.status(409).json({error:"That category already exists in this business."});
     if(e.code==="23503")return res.status(400).json({error:"The selected business does not exist."});
@@ -497,7 +498,7 @@ app.post("/api/categories", requireAuth, async (req,res,next)=>{
 });
 app.patch("/api/categories/:id",requireAuth,async(req,res,next)=>{
   try{
-    const current=await pool.query("SELECT business_id FROM categories WHERE id=$1",[req.params.id]);
+    const current=await pool.query("SELECT business_id,name,icon,color FROM categories WHERE id=$1",[req.params.id]);
     if(!current.rowCount)return res.status(404).json({error:"Category not found."});
     if(!await requireBusinessAccess(req,res,current.rows[0].business_id,true))return;
     const name=req.body?.name===undefined?null:String(req.body.name).trim();
@@ -507,15 +508,17 @@ app.patch("/api/categories/:id",requireAuth,async(req,res,next)=>{
       [req.params.id,name,req.body?.icon??null,req.body?.color??null]
     );
     res.json(result.rows[0]);
+    recordActivity(req,{event_type:"category_updated",entity_type:"category",entity_id:req.params.id,business_id:current.rows[0].business_id,title:`Updated category ${result.rows[0].name}`,details:{before:{name:current.rows[0].name,icon:current.rows[0].icon,color:current.rows[0].color},after:{name:result.rows[0].name,icon:result.rows[0].icon,color:result.rows[0].color}}});
   }catch(e){next(e);}
 });
 app.delete("/api/categories/:id",requireAuth,async(req,res,next)=>{
   try{
-    const current=await pool.query("SELECT business_id FROM categories WHERE id=$1",[req.params.id]);
+    const current=await pool.query("SELECT business_id,name FROM categories WHERE id=$1",[req.params.id]);
     if(!current.rowCount)return res.status(404).json({error:"Category not found."});
     if(!await requireBusinessAccess(req,res,current.rows[0].business_id,true))return;
     await pool.query("DELETE FROM categories WHERE id=$1",[req.params.id]);
     res.json({ok:true});
+    recordActivity(req,{event_type:"category_deleted",entity_type:"category",entity_id:req.params.id,business_id:current.rows[0].business_id,title:`Deleted category ${current.rows[0].name}`,details:{}});
   }catch(e){next(e);}
 });
 
@@ -547,6 +550,7 @@ app.post("/api/tasks",requireAuth,async(req,res,next)=>{
     res.status(201).json(result.rows[0]);
     const business=await businessRow(v.business_id);
     sendBusinessNotification(business,"Task added",result.rows[0]);
+    recordActivity(req,{event_type:"task_created",entity_type:"task",entity_id:result.rows[0].id,business_id:v.business_id,title:`Added task ${result.rows[0].title}`,details:{status:result.rows[0].status,priority:result.rows[0].priority,deadline:result.rows[0].deadline}});
   }catch(e){
     if(e.code==="23503")return res.status(400).json({error:"That category does not belong to the selected business."});
     if(e.code==="23514")return res.status(400).json({error:"Task details failed validation."});
@@ -559,7 +563,7 @@ app.patch("/api/tasks/:id",requireAuth,async(req,res,next)=>{
     if(!existing.rowCount)return res.status(404).json({error:"Task not found."});
     if(!await requireBusinessAccess(req,res,existing.rows[0].business_id,true))return;
     const v=normalizeTask(req.body||{});
-    if(v.status==="done"&&existing.rows[0].status!=="done")return res.status(400).json({error:"Use the task completion confirmation to mark this task done."});
+    if(v.status!==existing.rows[0].status)return res.status(400).json({error:"Use the task status control and confirm the change before saving."});
     if(!await requireBusinessAccess(req,res,v.business_id,true))return;
     const result=await pool.query(
       `UPDATE tasks SET business_id=$2,category_id=$3,title=$4,description=$5,notes=$6,status=$7,priority=$8,created_date=$9,start_date=$10,deadline=$11,
@@ -568,6 +572,9 @@ app.patch("/api/tasks/:id",requireAuth,async(req,res,next)=>{
       [req.params.id,v.business_id,v.category_id,v.title,v.description,v.notes,v.status,v.priority,v.created_date,v.start_date,v.deadline]
     );
     res.json(result.rows[0]);
+    if(existing.rows[0].title!==result.rows[0].title||existing.rows[0].description!==result.rows[0].description||existing.rows[0].deadline!==result.rows[0].deadline||existing.rows[0].priority!==result.rows[0].priority||existing.rows[0].business_id!==result.rows[0].business_id){
+      recordActivity(req,{event_type:"task_updated",entity_type:"task",entity_id:result.rows[0].id,business_id:result.rows[0].business_id,title:`Updated task ${result.rows[0].title}`,details:{before:{title:existing.rows[0].title,deadline:existing.rows[0].deadline,priority:existing.rows[0].priority},after:{title:result.rows[0].title,deadline:result.rows[0].deadline,priority:result.rows[0].priority}}});
+    }
     if(existing.rows[0].status!=="in_progress"&&result.rows[0].status==="in_progress"){
       const business=await businessRow(v.business_id);
       sendBusinessNotification(business,"In progress",result.rows[0]);
@@ -588,16 +595,18 @@ app.patch("/api/tasks/:id/status",requireAuth,async(req,res,next)=>{
     const note=String(req.body?.completion_note||"").trim();
     if(!["todo","in_progress","done"].includes(status))return res.status(400).json({error:"Invalid task status."});
     if(note.length>3000)return res.status(400).json({error:"Completion note must be under 3,000 characters."});
+    if(task.status!==status&&!req.body?.confirm_status_change)return res.status(400).json({error:"Confirm the status change before saving it."});
     if(status==="done"&&task.status!=="done"&&!req.body?.confirm_completion)return res.status(400).json({error:"Confirm completion before marking this task done."});
     const updated=await pool.query(`UPDATE tasks SET status=$2,
       completed_at=CASE WHEN $2='done' THEN COALESCE(completed_at,now()) ELSE NULL END,
-      completion_note=CASE WHEN $2='done' THEN NULLIF($3,'') ELSE completion_note END,
+      completion_note=CASE WHEN $2='done' THEN NULLIF($3,'') ELSE NULL END,
       delayed_notified_at=CASE WHEN $2='done' THEN NULL ELSE delayed_notified_at END
       WHERE id=$1 RETURNING *`,[req.params.id,status,note]);
     res.json(updated.rows[0]);
     const business=await businessRow(task.business_id);
     if(task.status!==status&&status==="done")sendBusinessNotification(business,"Task done",updated.rows[0]);
     else if(task.status!==status&&status==="in_progress")sendBusinessNotification(business,"In progress",updated.rows[0]);
+    if(task.status!==status)recordActivity(req,{event_type:"task_status_changed",entity_type:"task",entity_id:task.id,business_id:task.business_id,title:`Changed ${task.title} to ${status==="done"?"Done":status==="in_progress"?"In progress":"To do"}`,details:{from:task.status,to:status,note:status==="done"?note:null}});
   }catch(e){next(e);}
 });
 app.delete("/api/tasks/:id",requireAuth,async(req,res,next)=>{
@@ -607,6 +616,7 @@ app.delete("/api/tasks/:id",requireAuth,async(req,res,next)=>{
     if(!await requireBusinessAccess(req,res,current.rows[0].business_id,true))return;
     await pool.query("DELETE FROM tasks WHERE id=$1",[req.params.id]);
     res.json({ok:true});
+    recordActivity(req,{event_type:"task_deleted",entity_type:"task",entity_id:current.rows[0].id,business_id:current.rows[0].business_id,title:`Deleted task ${current.rows[0].title}`,details:{status:current.rows[0].status,deadline:current.rows[0].deadline}});
   }catch(e){next(e);}
 });
 
