@@ -1,0 +1,43 @@
+name: TaskXVS build checks
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "server.js"
+      - "whatsapp-worker/**"
+      - "package.json"
+      - "vite.config.*"
+      - ".github/workflows/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install TaskXVS dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build TaskXVS frontend
+        run: npm run build
+
+      - name: Check backend syntax
+        run: node --check server.js
+
+      - name: Install WhatsApp worker dependencies
+        run: npm install --prefix whatsapp-worker --no-audit --no-fund
+
+      - name: Check WhatsApp worker syntax
+        run: node --check whatsapp-worker/worker.js
