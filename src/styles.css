@@ -785,3 +785,8 @@ body { background:#f5efe6; color:#332d26; }
   .user-manager-details { min-width:calc(100% - 55px); }
   .business-inline-edit { grid-template-columns:1fr; }
 }
+
+.email-setup-notice { display:flex; align-items:center; gap:10px; padding:11px 13px; margin-bottom:13px; border:1px solid #ecd8c5; border-radius:13px; background:#fff4e8; color:#b26735; }
+.email-setup-notice > span { display:grid; gap:3px; }
+.email-setup-notice strong { font:700 10px Manrope; }
+.email-setup-notice small { color:#9b8068; font-size:9px; }
