@@ -1185,6 +1185,18 @@ app.delete("/api/tasks/:id",requireAuth,async(req,res,next)=>{
   }catch(e){next(e);}
 });
 
+app.post("/api/internal/notifications/deadlines",async(req,res,next)=>{
+  try{
+    const result=await pool.query("SELECT token FROM whatsapp_gateway.scheduler_token WHERE id=true LIMIT 1");
+    const expected=result.rows[0]?.token||"";
+    const supplied=String(req.get("x-taskxvs-scheduler-token")||"");
+    if(!expected||!supplied||!safeEqual(supplied,expected)){
+      return res.status(401).json({error:"Scheduler authorization failed."});
+    }
+    await checkOwnerDeadlineReminders();
+    res.set("Cache-Control","no-store").json({ok:true,checked_at:new Date().toISOString()});
+  }catch(error){next(error);}
+});
 app.get("/api/health",async(_req,res)=>{
   try{await pool.query("SELECT 1");res.json({ok:true,service:"taskxvs",emailReady:Boolean(RESEND_API_KEY&&RESEND_FROM)});}
   catch{res.status(503).json({ok:false});}
