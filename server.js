@@ -131,6 +131,33 @@ async function requireBusinessAccess(req, res, businessId, write=false) {
   }
   return true;
 }
+
+async function recordActivity(req,event) {
+  try {
+    const auth=req?.auth||{};
+    await pool.query(
+      `INSERT INTO activity_log
+       (actor_id,actor_username,actor_display_name,event_type,entity_type,entity_id,business_id,title,details)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)`,
+      [auth.id?String(auth.id):null,auth.username||"unknown",auth.displayName||auth.username||"Unknown",
+       event.event_type,event.entity_type,event.entity_id?String(event.entity_id):null,
+       event.business_id?String(event.business_id):null,event.title||"Workspace change",
+       JSON.stringify(event.details||{})]
+    );
+  } catch(error) { console.error("Activity log write failed:",error.message); }
+}
+async function recordSystemActivity(event) {
+  try {
+    await pool.query(
+      `INSERT INTO activity_log
+       (actor_id,actor_username,actor_display_name,event_type,entity_type,entity_id,business_id,title,details)
+       VALUES (NULL,'taskxvs-system','TaskXVS system',$1,$2,$3,$4,$5,$6::jsonb)`,
+      [event.event_type,event.entity_type,event.entity_id?String(event.entity_id):null,
+       event.business_id?String(event.business_id):null,event.title||"Automatic workspace event",
+       JSON.stringify(event.details||{})]
+    );
+  } catch(error) { console.error("System activity log write failed:",error.message); }
+}
 async function requireSameOrigin(req, res, next) {
   if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return next();
   const origin = req.get("origin");
