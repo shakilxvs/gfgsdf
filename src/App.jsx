@@ -6,7 +6,7 @@ import {
   LogOut, Mail, Megaphone, Menu, MoreHorizontal, Palette, PenLine, Percent,
   Plus, Search, Settings, ShoppingBag, SlidersHorizontal, Tag, Trash2,
   Video, Wallet, X, Pencil, RotateCcw, AlertCircle, CalendarRange,
-  Layers3, CircleCheck, CircleAlert, PanelLeftClose, Grid2X2, Sparkles
+  Layers3, CircleCheck, CircleAlert, PanelLeftClose, Grid2X2, Sparkles, Lock
 } from "lucide-react";
 
 const ICONS = {
@@ -112,7 +112,7 @@ function Login({onLogin}) {
       <div className="login-copy"><span className="eyebrow">YOUR WORK, IN ONE PLACE</span><h1>Welcome back.</h1><p>A calmer way to stay on top of every business.</p></div>
       <form onSubmit={submit} className="login-form">
         <label className="field"><span>Login ID</span><div className="input-with-icon"><BriefcaseBusiness size={16}/><input value={username} onChange={e=>setUsername(e.target.value)} autoComplete="username" required /></div></label>
-        <label className="field"><span>Password</span><div className="input-with-icon"><span className="field-lock">⌑</span><input type={show?"text":"password"} value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" required/><button type="button" className="reveal-button" onClick={()=>setShow(v=>!v)} aria-label={show?"Hide password":"Show password"}><Eye size={16}/></button></div></label>
+        <label className="field"><span>Password</span><div className="input-with-icon"><Lock size={15}/><input type={show?"text":"password"} value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" required/><button type="button" className="reveal-button" onClick={()=>setShow(v=>!v)} aria-label={show?"Hide password":"Show password"}><Eye size={16}/></button></div></label>
         {error && <div className="login-error" role="alert"><AlertCircle size={15}/>{error}</div>}
         <Button className="login-submit" disabled={busy}>{busy?"Signing in…":<>Sign in <ArrowUpRight size={16}/></>}</Button>
       </form>
@@ -385,7 +385,7 @@ function App() {
           <div className="section-heading"><div><span className="eyebrow">GLOBAL SEARCH</span><h2>Results for “{search.trim()}”</h2><p>{searchResults.length} matching {searchResults.length===1?"task":"tasks"} across all businesses.</p></div></div>
           {searchResults.length?<div className="task-masonry">{searchResults.map(t=>taskCard(t,true))}</div>:<EmptyState title="No matches found" description="Try another keyword or search for a business, category or task detail."/>}
         </section> : active==="overview" ? <section className="page-section">
-          <div className="welcome-row"><div><span className="eyebrow">TUESDAY, YOUR WORKSPACE</span><h2>Good {new Date().getHours()<12?"morning":new Date().getHours()<17?"afternoon":"evening"}, Shakil.</h2><p>Here's what needs your attention today.</p></div><div className="today-stamp"><CalendarDays size={15}/>{new Date().toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short",timeZone:"Asia/Dhaka"})}</div></div>
+          <div className="welcome-row"><div><span className="eyebrow">{new Date().toLocaleDateString("en-US",{weekday:"long",timeZone:"Asia/Dhaka"}).toUpperCase()}, YOUR WORKSPACE</span><h2>Good {new Date().getHours()<12?"morning":new Date().getHours()<17?"afternoon":"evening"}, Shakil.</h2><p>Here's what needs your attention today.</p></div><div className="today-stamp"><CalendarDays size={15}/>{new Date().toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short",timeZone:"Asia/Dhaka"})}</div></div>
           <div className="overview-toolbar"><div><h3>Overview</h3><p>All your work, without the noise.</p></div><div className="range-control"><CalendarRange size={15}/><select value={range} onChange={e=>setRange(e.target.value)}><option value="today">Today</option><option value="7">Next 7 days</option><option value="30">Next 30 days</option><option value="month">This month</option><option value="all">All time</option><option value="custom">Custom range</option></select></div></div>
           {range==="custom"&&<div className="custom-range"><label>From <input type="date" value={customFrom} onChange={e=>setCustomFrom(e.target.value)}/></label><label>To <input type="date" min={customFrom} value={customTo} onChange={e=>setCustomTo(e.target.value)}/></label></div>}
           <div className="metric-grid">
