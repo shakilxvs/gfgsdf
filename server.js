@@ -278,6 +278,23 @@ app.get("/api/bootstrap", requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+app.get("/api/admin/activity",requireAuth,requireOwner,async(req,res,next)=>{
+  try{
+    const limit=Math.max(1,Math.min(100,Number.parseInt(req.query.limit,10)||60));
+    const before=req.query.before?String(req.query.before):null;
+    const result=await pool.query(
+      `SELECT a.*,b.name AS business_name
+       FROM activity_log a
+       LEFT JOIN businesses b ON b.id::text=a.business_id
+       WHERE ($2::timestamptz IS NULL OR a.created_at<$2::timestamptz)
+       ORDER BY a.created_at DESC,a.id DESC LIMIT $1`,
+      [limit,before]
+    );
+    res.set("Cache-Control","no-store").json({events:result.rows});
+  }catch(e){next(e);}
+});
+
+
 /* Owner-managed users and per-business permissions. */
 app.get("/api/admin/users", requireAuth, requireOwner, async (_req, res, next) => {
   try {
@@ -310,6 +327,8 @@ app.post("/api/admin/users", requireAuth, requireOwner, async (req, res, next) =
     );
     for (const assignment of assignments) {
       if (!["read","write"].includes(assignment.permission)) throw Object.assign(new Error("Invalid business permission."),{status:400});
+      const restricted=await client.query("SELECT id FROM businesses WHERE id=$1 AND created_by_user_id IS NOT NULL AND created_by_user_id<>$2",[assignment.business_id,created.rows[0].id]);
+      if(restricted.rowCount)throw Object.assign(new Error("A member-created business is private to its creator and the workspace owner."),{status:403});
       await client.query(
         "INSERT INTO business_assignments (user_id,business_id,permission) VALUES ($1,$2,$3)",
         [created.rows[0].id,assignment.business_id,assignment.permission]
@@ -317,6 +336,7 @@ app.post("/api/admin/users", requireAuth, requireOwner, async (req, res, next) =
     }
     await client.query("COMMIT");
     res.status(201).json(created.rows[0]);
+    recordActivity(req,{event_type:"team_member_created",entity_type:"team_member",entity_id:created.rows[0].id,title:`Created team member ${username}`,details:{username,display_name:displayName,assigned_business_count:assignments.length}});
   } catch (e) {
     await client.query("ROLLBACK");
     if (e.code === "23505") return res.status(409).json({ error: "That username is already in use." });
@@ -353,9 +373,13 @@ app.patch("/api/admin/users/:id", requireAuth, requireOwner, async (req, res, ne
         [req.params.id,credentials.salt,credentials.hash]);
     }
     if (Array.isArray(req.body?.assignments)) {
-      await client.query("DELETE FROM business_assignments WHERE user_id=$1",[req.params.id]);
       for (const assignment of req.body.assignments) {
         if (!["read","write"].includes(assignment.permission)) throw Object.assign(new Error("Invalid business permission."),{status:400});
+        const restricted=await client.query("SELECT id FROM businesses WHERE id=$1 AND created_by_user_id IS NOT NULL AND created_by_user_id<>$2",[assignment.business_id,req.params.id]);
+        if(restricted.rowCount)throw Object.assign(new Error("A member-created business is private to its creator and the workspace owner."),{status:403});
+      }
+      await client.query("DELETE FROM business_assignments WHERE user_id=$1",[req.params.id]);
+      for (const assignment of req.body.assignments) {
         await client.query("INSERT INTO business_assignments (user_id,business_id,permission) VALUES ($1,$2,$3)",
           [req.params.id,assignment.business_id,assignment.permission]);
       }
@@ -363,6 +387,8 @@ app.patch("/api/admin/users/:id", requireAuth, requireOwner, async (req, res, ne
     const result=await client.query("SELECT id,username,display_name,email,active FROM users WHERE id=$1",[req.params.id]);
     await client.query("COMMIT");
     res.json(result.rows[0]);
+    const eventType=typeof req.body.active==="boolean"?(req.body.active?"team_member_enabled":"team_member_disabled"):"team_member_updated";
+    recordActivity(req,{event_type:eventType,entity_type:"team_member",entity_id:req.params.id,title:`Updated team member ${result.rows[0].username}`,details:{display_name:result.rows[0].display_name,active:result.rows[0].active,assignments_changed:Array.isArray(req.body?.assignments)}});
   } catch(e) {
     await client.query("ROLLBACK");
     if(e.code==="23503")return res.status(400).json({error:"One of the selected businesses does not exist."});
@@ -371,9 +397,11 @@ app.patch("/api/admin/users/:id", requireAuth, requireOwner, async (req, res, ne
 });
 app.delete("/api/admin/users/:id", requireAuth, requireOwner, async (req,res,next) => {
   try {
-    const result=await pool.query("DELETE FROM users WHERE id=$1 RETURNING id",[req.params.id]);
-    if(!result.rowCount)return res.status(404).json({error:"User not found."});
+    const current=await pool.query("SELECT id,username,display_name FROM users WHERE id=$1",[req.params.id]);
+    if(!current.rowCount)return res.status(404).json({error:"User not found."});
+    await pool.query("DELETE FROM users WHERE id=$1",[req.params.id]);
     res.json({ok:true});
+    recordActivity(req,{event_type:"team_member_deleted",entity_type:"team_member",entity_id:req.params.id,title:`Deleted team member ${current.rows[0].username}`,details:{display_name:current.rows[0].display_name}});
   } catch(e){next(e);}
 });
 
