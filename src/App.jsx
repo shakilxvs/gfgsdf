@@ -96,7 +96,7 @@ async function api(path, options={}) {
 }
 
 function Brand({collapsed=false}) {
-  return <div className="brand-lockup"><div className="brand-symbol">X</div>{!collapsed&&<div className="brand-name">TASKXVS</div>}</div>;
+  return <div className="brand-lockup"><div className="brand-symbol"><ListChecks size={20} strokeWidth={2.4}/></div>{!collapsed&&<div className="brand-name">TASKXVS</div>}</div>;
 }
 function Button({children, variant="primary", size="normal", className="", ...props}) {
   return <button className={`button button-${variant} button-${size} ${className}`} {...props}>{children}</button>;
@@ -135,7 +135,7 @@ function Login({onLogin}) {
   }
   return <main className="login-screen">
     <div className="login-panel">
-      <div className="login-brand"><div className="login-mark">X</div><div className="login-wordmark">TASKXVS</div></div>
+      <div className="login-brand"><div className="login-mark"><ListChecks size={22} strokeWidth={2.4}/></div><div className="login-wordmark">TASKXVS</div></div>
       <div className="login-copy"><h1>Welcome back.</h1><p>One workspace for all your businesses.</p></div>
       <form onSubmit={submit} className="login-form">
         <label className="field"><span>Login ID</span><div className="input-with-icon"><BriefcaseBusiness size={16}/><input value={username} onChange={e=>setUsername(e.target.value)} autoComplete="username" required /></div></label>
@@ -238,7 +238,6 @@ function TaskForm({task,businesses,categories,defaultBusiness,onClose,onSave}) {
       <div className="form-grid">
         <label className="field"><span>Business</span><select value={draft.business_id} onChange={e=>set("business_id",e.target.value)} required>{businesses.filter(b=>!b.archived).map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
         <label className="field"><span>Category</span><select value={draft.category_id} onChange={e=>set("category_id",e.target.value)}><option value="">Uncategorized</option>{available.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-        <label className="field"><span>Status</span><select value={draft.status} onChange={e=>set("status",e.target.value)}>{STATUSES.map(s=><option key={s.value} value={s.value} disabled={s.value==="done"&&(!task||task.status!=="done")}>{s.value==="done"&&(!task||task.status!=="done")?"Done (confirm from task list)":s.label}</option>)}</select></label>
         <label className="field"><span>Priority</span><select value={draft.priority} onChange={e=>set("priority",e.target.value)}>{PRIORITIES.map(p=><option key={p.value} value={p.value}>{p.label}</option>)}</select></label>
         <label className="field"><span>Created date</span><input type="date" value={draft.created_date} onChange={e=>set("created_date",e.target.value)}/></label>
         <label className="field"><span>Start date <i>Optional</i></span><input type="date" value={draft.start_date} onChange={e=>set("start_date",e.target.value)}/></label>
@@ -437,7 +436,11 @@ function App() {
   const [editingTask,setEditingTask]=useState(null);
   const [viewingTask,setViewingTask]=useState(null);
   const [completingTask,setCompletingTask]=useState(null);
+  const [requestedStatus,setRequestedStatus]=useState("done");
   const [completionNote,setCompletionNote]=useState("");
+  const [activityItems,setActivityItems]=useState([]);
+  const [activityOpen,setActivityOpen]=useState(false);
+  const [activitySeenAt,setActivitySeenAt]=useState(()=>{try{return localStorage.getItem("taskxvs_activity_seen")||"";}catch{return "";}});
   const [completionBusy,setCompletionBusy]=useState(false);
   const [toast,setToast]=useState("");
   const [mobileNav,setMobileNav]=useState(false);
@@ -448,7 +451,7 @@ function App() {
     try {
       const result=await api("/api/bootstrap");
       setBusinesses(result.businesses||[]);setCategories(result.categories||[]);setTasks(result.tasks||[]);setSessionUser(result.user||null);setEmailConfigured(Boolean(result.emailConfigured));
-      if(result.user?.role==="owner"){const u=await api("/api/admin/users");setUsers(u.users||[]);}else{setUsers([]);}
+      if(result.user?.role==="owner"){const [u,a]=await Promise.all([api("/api/admin/users"),api("/api/admin/activity?limit=60")]);setUsers(u.users||[]);setActivityItems(a.events||[]);}else{setUsers([]);setActivityItems([]);}
     } finally {setLoading(false);}
   }
   useEffect(()=>{
