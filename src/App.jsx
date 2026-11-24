@@ -172,7 +172,10 @@ function TaskCard({task, category, business, today, onEdit, onDelete, onStatus, 
 }
 
 function DeadlineView({value,today}) {
-  if(!value)return <span className="deadline-empty">No date</span>;
+  if(!value)return <div className="deadline-view deadline-view-empty">
+    <span className="deadline-icon"><CalendarDays size={15}/></span>
+    <span className="deadline-copy"><strong>No deadline</strong></span>
+  </div>;
   const days=dayDiff(value,today);
   return <div className={`deadline-view ${days<0?"deadline-late":days<=2?"deadline-soon":""}`}>
     <span className="deadline-icon"><CalendarDays size={15}/></span>
