@@ -372,8 +372,6 @@ app.post("/api/businesses", requireAuth, async (req, res, next) => {
     if(e.code==="23505")return res.status(409).json({error:"A business with that name already exists."});
     next(e);
   }finally{client.release();}
-});(e);
-  }
 });
 app.patch("/api/businesses/:id", requireAuth, requireOwner, async (req,res,next)=>{
   try{
