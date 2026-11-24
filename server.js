@@ -233,17 +233,18 @@ async function businessRow(businessId) {
   return result.rows[0] || null;
 }
 async function checkDelayedTaskNotifications() {
-  if(!RESEND_API_KEY||!RESEND_FROM)return;
   const due=await pool.query(`SELECT t.*,b.name AS business_name,b.notification_email,b.email_notifications
     FROM tasks t JOIN businesses b ON b.id=t.business_id
     WHERE t.status <> 'done' AND t.deadline < (now() AT TIME ZONE 'Asia/Dhaka')::date
-      AND t.delayed_notified_at IS NULL AND b.email_notifications=true
-      AND b.notification_email IS NOT NULL AND b.notification_email <> ''`);
+      AND t.delayed_notified_at IS NULL`);
   for(const task of due.rows){
     const claim=await pool.query("UPDATE tasks SET delayed_notified_at=now() WHERE id=$1 AND delayed_notified_at IS NULL RETURNING id",[task.id]);
     if(!claim.rowCount)continue;
-    const sent=await sendBusinessNotification({name:task.business_name,notification_email:task.notification_email,email_notifications:task.email_notifications},"Task delayed",task);
-    if(!sent)await pool.query("UPDATE tasks SET delayed_notified_at=NULL WHERE id=$1",[task.id]);
+    await recordSystemActivity({event_type:"task_delayed",entity_type:"task",entity_id:task.id,business_id:task.business_id,title:`Task delayed: ${task.title}`,details:{deadline:task.deadline,status:task.status}});
+    if(task.email_notifications&&task.notification_email&&RESEND_API_KEY&&RESEND_FROM){
+      const sent=await sendBusinessNotification({name:task.business_name,notification_email:task.notification_email,email_notifications:task.email_notifications},"Task delayed",task);
+      if(!sent)console.error("Delayed task email could not be sent for:",task.id);
+    }
   }
 }
 async function initDatabase() {
