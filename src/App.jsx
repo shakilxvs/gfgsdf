@@ -10,11 +10,16 @@ import {
 } from "lucide-react";
 
 const ICONS = {
+  "shopping-bag": ShoppingBag, percent: Percent, tag: Tag, video: Video,
+  mail: Mail, megaphone: Megaphone, palette: Palette, code: Code2,
+  search: Search, "pen-line": PenLine, settings: Settings, wallet: Wallet,
+  "circle-dot": CircleDot, briefcase: BriefcaseBusiness, calendar: CalendarDays,
+  activity: Activity, layers: Layers3, sparkles: Sparkles,
   ShoppingBag, Percent, Tag, Video, Mail, Megaphone, Palette, Code2, Search,
   PenLine, Settings, Wallet, CircleDot, BriefcaseBusiness, CalendarDays,
   Activity, Layers3, Sparkles
 };
-const COLORS = ["#527966","#c87561","#8879b0","#6d91a0","#ba944e","#7b8580","#6d9277","#bb8a9a"];
+const COLORS = ["#d97737","#bd6c3f","#aa7955","#b86b45","#c28c49","#788d79","#927a9e","#6b8491"];
 const PRIORITIES = [
   { value:"low", label:"Low" }, { value:"normal", label:"Normal" },
   { value:"high", label:"High" }, { value:"urgent", label:"Urgent" }
@@ -23,7 +28,7 @@ const STATUSES = [
   { value:"todo", label:"To do" }, { value:"in_progress", label:"In progress" },
   { value:"done", label:"Done" }
 ];
-const ICON_OPTIONS = Object.keys(ICONS);
+const ICON_OPTIONS = ["shopping-bag","percent","tag","video","mail","megaphone","palette","code","search","pen-line","settings","wallet","circle-dot"];
 
 function todayDhaka() {
   return new Intl.DateTimeFormat("en-CA", { timeZone:"Asia/Dhaka", year:"numeric", month:"2-digit", day:"2-digit" }).format(new Date());
@@ -51,6 +56,10 @@ function isDueSoon(task, today) {
   return isOpen(task) && task.deadline && task.deadline >= today && task.deadline <= addDays(today,2);
 }
 function priorityLabel(value) { return PRIORITIES.find(x=>x.value===value)?.label || "Normal"; }
+function displayStatus(task,today) {
+  if (isOverdue(task,today)) return "Delayed";
+  return STATUSES.find(s=>s.value===task.status)?.label || "To do";
+}
 function shortDateTime(value) {
   if (!value) return "Recently";
   const d = new Date(value);
@@ -147,7 +156,27 @@ function TaskCard({task, category, business, today, onEdit, onDelete, onStatus})
   </article>;
 }
 
-function TaskForm({task,businesses,categories,defaultBusiness,onClose,onSave}) {
+function TaskListRow({task,category,business,today,onEdit,onDelete,onStatus}) {
+  const Icon = ICONS[category?.icon] || Tag;
+  const delayed = isOverdue(task,today);
+  const statusText = displayStatus(task,today);
+  return <article className={`task-row ${task.status==="done"?"task-done":""}`}>
+    <span className="task-row-category" title={category?.name||"Uncategorized"} style={{"--chip-color":category?.color||"#d97737"}}><Icon size={19}/></span>
+    <div className="task-row-main">
+      <div className="task-row-title-line"><h3>{task.title}</h3>{business&&<span className="task-row-business">{business.name}</span>}</div>
+      {task.description&&<p className="task-row-description">{task.description}</p>}
+    </div>
+    <div className="task-row-deadline"><small>Deadline</small><strong className={delayed?"text-delayed":""}>{task.deadline?formatDate(task.deadline,true):"No deadline"}</strong>{task.deadline&&<span>{relativeDeadline(task,today)}</span>}</div>
+    <div className={`task-row-status ${delayed?"status-delayed":task.status==="done"?"status-done":task.status==="in_progress"?"status-progress":"status-todo"}`}>{statusText}</div>
+    <div className="task-row-actions">
+      <select value={task.status} onChange={e=>onStatus(e.target.value)} aria-label="Change task status"><option value="todo">To do</option><option value="in_progress">In progress</option><option value="done">Done</option></select>
+      <IconButton label="Edit task" onClick={onEdit}><Pencil size={15}/></IconButton>
+      <IconButton label="Delete task" onClick={onDelete}><Trash2 size={15}/></IconButton>
+    </div>
+  </article>;
+}
+
+function TaskForm({task,businesses,categories,defaultBusiness,onClose,onSave})
   const [draft,setDraft]=useState(()=>({
     business_id:task?.business_id||defaultBusiness||businesses[0]?.id||"",
     category_id:task?.category_id||"",
@@ -247,7 +276,9 @@ function App() {
   const [tasks,setTasks]=useState([]);
   const [active,setActive]=useState("overview");
   const [search,setSearch]=useState("");
-  const [listMode,setListMode]=useState(false);
+  const [listMode,setListMode]=useState(true);
+  const [sidebarCollapsed,setSidebarCollapsed]=useState(false);
+  const [filtersOpen,setFiltersOpen]=useState(false);
   const [range,setRange]=useState("7");
   const [customFrom,setCustomFrom]=useState(todayDhaka());
   const [customTo,setCustomTo]=useState(addDays(todayDhaka(),7));
@@ -293,6 +324,12 @@ function App() {
   async function deleteCategory(c){const count=tasks.filter(t=>t.category_id===c.id).length;if(!confirm(`Delete “${c.name}”? ${count} task(s) will become uncategorized.`))return;await api(`/api/categories/${c.id}`,{method:"DELETE"});setCategories(cs=>cs.filter(x=>x.id!==c.id));setTasks(ts=>ts.map(t=>t.category_id===c.id?{...t,category_id:null}:t));notify("Category deleted");}
 
   const pendingFor = id => tasks.filter(t=>t.business_id===id&&isOpen(t)).length;
+  const progressFor = id => {
+    const related=tasks.filter(t=>t.business_id===id);
+    const done=related.filter(t=>t.status==="done").length;
+    return {done,total:related.length,percent:related.length?Math.round(done/related.length*100):0};
+  };
+  const overallProgress=tasks.length?Math.round(tasks.filter(t=>t.status==="done").length/tasks.length*100):0;
   const selectedBusiness=businesses.find(b=>b.id===active);
   const searchResults=useMemo(()=>{
     const q=search.trim().toLowerCase();
@@ -314,6 +351,8 @@ function App() {
     return target>=from&&target<=to;
   });
   const overdueTasks=tasks.filter(t=>isOverdue(t,today)).sort((a,b)=>a.deadline.localeCompare(b.deadline));
+  const progressPercent=overviewTasks.length?Math.round(completedTasks.length/overviewTasks.length*100):0;
+  const overviewTasksSorted=[...overviewTasks].sort((a,b)=>(a.deadline||"9999-12-31").localeCompare(b.deadline||"9999-12-31"));
   const urgentTasks=tasks.filter(t=>isDueSoon(t,today)|| (isOpen(t)&&t.priority==="urgent")).sort((a,b)=>(a.deadline||"9999").localeCompare(b.deadline||"9999"));
   const completedTasks=overviewTasks.filter(t=>t.status==="done");
   const openTasks=overviewTasks.filter(isOpen);
@@ -344,11 +383,13 @@ function App() {
   function clearFilters(){setFilters({category:"",status:"",priority:"",deadlineState:"",dueFrom:"",dueTo:"",createdFrom:"",createdTo:"",sort:"deadline"});}
   function taskCard(t,withBusiness=false){
     const b=businesses.find(x=>x.id===t.business_id),c=categories.find(x=>x.id===t.category_id);
-    return <TaskCard key={t.id} task={t} category={c} business={withBusiness?b:null} today={today}
-      onEdit={()=>{setEditingTask(t);setModal("task");}}
-      onDelete={()=>removeTask(t)}
-      onStatus={status=>changeStatus(t,status)}/>;
+    const props={task:t,category:c,business:withBusiness?b:null,today,
+      onEdit:()=>{setEditingTask(t);setModal("task");},
+      onDelete:()=>removeTask(t),
+      onStatus:status=>changeStatus(t,status)};
+    return listMode?<TaskListRow key={t.id} {...props}/>:<TaskCard key={t.id} {...props}/>;
   }
+  const activeFilterCount=Object.entries(filters).filter(([k,v])=>k!=="sort"&&Boolean(v)).length;
   function openNewTask(){setEditingTask(null);if(active==="overview"&&!businesses.some(b=>!b.archived)){notify("Add a business first.");return;}setModal("task");}
   function tabTo(id){setActive(id);clearFilters();setSearch("");setMobileNav(false);}
   const headerTitle=search.trim()?"Search results":active==="overview"?"Overview":selectedBusiness?.name||"Overview";
@@ -356,8 +397,8 @@ function App() {
 
   if(checking)return <div className="boot-screen"><div className="boot-mark">S</div><span>Preparing your workspace…</span></div>;
   if(!authenticated)return <Login onLogin={login}/>;
-  return <div className="app-frame">
-    <aside className={`sidebar ${mobileNav?"sidebar-open":""}`}>
+  return <div className={`app-frame ${sidebarCollapsed?"app-collapsed":""}`}>
+    <aside className={`sidebar ${mobileNav?"sidebar-open":""} ${sidebarCollapsed?"sidebar-collapsed":""}`}>
       <Brand/>
       <div className="sidebar-section-label">WORKSPACE</div>
       <button className={`sidebar-link ${active==="overview"?"is-active":""}`} onClick={()=>tabTo("overview")}><LayoutDashboard size={17}/>Overview</button>
@@ -369,13 +410,16 @@ function App() {
     {mobileNav&&<button className="mobile-scrim" onClick={()=>setMobileNav(false)} aria-label="Close menu"/>}
     <main className="main-area">
       <header className="topbar">
-        <div className="topbar-left"><IconButton label="Open menu" className="mobile-menu-button" onClick={()=>setMobileNav(true)}><Menu size={18}/></IconButton><div><h1>{headerTitle}</h1><p>{headerSub}</p></div></div>
+        <div className="topbar-left">
+          <IconButton label={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"} className="sidebar-collapse-toggle" onClick={()=>setSidebarCollapsed(v=>!v)}><PanelLeftClose size={18}/></IconButton>
+          <IconButton label="Open menu" className="mobile-menu-button" onClick={()=>setMobileNav(true)}><Menu size={18}/></IconButton>
+        </div>
         <div className="topbar-right"><label className="global-search"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search tasks, details…" aria-label="Search all tasks"/>{search&&<button onClick={()=>setSearch("")} aria-label="Clear search"><X size={14}/></button>}</label><Button onClick={openNewTask}><Plus size={16}/> New task</Button><IconButton label="Sign out" className="top-logout" onClick={logout}><LogOut size={17}/></IconButton></div>
       </header>
       <div className="main-scroll">
         <div className="business-tabs">
           <button className={`business-tab ${active==="overview"&&!search?"tab-active":""}`} onClick={()=>tabTo("overview")}><LayoutDashboard size={15}/>Overview</button>
-          {businesses.filter(b=>!b.archived).map(b=><button key={b.id} className={`business-tab ${active===b.id&&!search?"tab-active":""}`} onClick={()=>tabTo(b.id)}>{b.name}<span className="tab-counter">{pendingFor(b.id)}</span></button>)}
+          {businesses.filter(b=>!b.archived).map(b=>{const p=progressFor(b.id);return <button key={b.id} title={`${b.name}: ${p.percent}% complete`} className={`business-tab ${active===b.id&&!search?"tab-active":""}`} onClick={()=>tabTo(b.id)}><span className="tab-label">{b.name}<span className="tab-counter">{pendingFor(b.id)}</span></span><span className="business-tab-progress"><i style={{width:p.percent+"%"}}/></span></button>})}
           <button className="business-tab tab-add" onClick={()=>setModal("businesses")}><Plus size={15}/>Business</button>
           <span className="tabs-spacer"/>
           <button className="manage-businesses" onClick={()=>setModal("businesses")}><Settings size={14}/> Manage</button>
@@ -383,41 +427,47 @@ function App() {
 
         {search.trim()? <section className="page-section">
           <div className="section-heading"><div><span className="eyebrow">GLOBAL SEARCH</span><h2>Results for “{search.trim()}”</h2><p>{searchResults.length} matching {searchResults.length===1?"task":"tasks"} across all businesses.</p></div></div>
-          {searchResults.length?<div className="task-masonry">{searchResults.map(t=>taskCard(t,true))}</div>:<EmptyState title="No matches found" description="Try another keyword or search for a business, category or task detail."/>}
+          {searchResults.length?<div className={listMode?"task-list-mode":"task-masonry"}>{searchResults.map(t=>taskCard(t,true))}</div>:<EmptyState title="No matches found" description="Try another keyword or search for a business, category or task detail."/>}
         </section> : active==="overview" ? <section className="page-section">
-          <div className="welcome-row"><div><span className="eyebrow">{new Date().toLocaleDateString("en-US",{weekday:"long",timeZone:"Asia/Dhaka"}).toUpperCase()}, YOUR WORKSPACE</span><h2>Good {new Date().getHours()<12?"morning":new Date().getHours()<17?"afternoon":"evening"}, Shakil.</h2><p>Here's what needs your attention today.</p></div><div className="today-stamp"><CalendarDays size={15}/>{new Date().toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short",timeZone:"Asia/Dhaka"})}</div></div>
-          <div className="overview-toolbar"><div><h3>Overview</h3><p>All your work, without the noise.</p></div><div className="range-control"><CalendarRange size={15}/><select value={range} onChange={e=>setRange(e.target.value)}><option value="today">Today</option><option value="7">Next 7 days</option><option value="30">Next 30 days</option><option value="month">This month</option><option value="all">All time</option><option value="custom">Custom range</option></select></div></div>
+          <div className="overview-toolbar">
+            <div><h3>Overview</h3></div>
+            <div className="range-control"><CalendarRange size={15}/><select value={range} onChange={e=>setRange(e.target.value)}><option value="today">Today</option><option value="7">Next 7 days</option><option value="30">Next 30 days</option><option value="month">This month</option><option value="all">All time</option><option value="custom">Custom range</option></select></div>
+          </div>
           {range==="custom"&&<div className="custom-range"><label>From <input type="date" value={customFrom} onChange={e=>setCustomFrom(e.target.value)}/></label><label>To <input type="date" min={customFrom} value={customTo} onChange={e=>setCustomTo(e.target.value)}/></label></div>}
           <div className="metric-grid">
-            <Metric icon={<Layers3 size={17}/>} label="Open tasks" value={openTasks.length} tone="sage" helper="In this date range"/>
-            <Metric icon={<CheckCheck size={17}/>} label="Completed" value={completedTasks.length} tone="lavender" helper="In this date range"/>
-            <Metric icon={<AlarmClock size={17}/>} label="Urgent" value={urgentTasks.length} tone="amber" helper="Due within 2 days"/>
-            <Metric icon={<CircleAlert size={17}/>} label="Overdue" value={overdueTasks.length} tone="coral" helper="Past deadline"/>
+            <Metric icon={<Layers3 size={17}/>} label="Open" value={openTasks.length} tone="sage"/>
+            <Metric icon={<CheckCheck size={17}/>} label="Done" value={completedTasks.length} tone="lavender"/>
+            <Metric icon={<AlarmClock size={17}/>} label="Urgent" value={urgentTasks.length} tone="amber"/>
+            <Metric icon={<CircleAlert size={17}/>} label="Delayed" value={overdueTasks.length} tone="coral"/>
           </div>
-          <div className="overview-panels">
-            <div className="overview-panel panel-wide"><div className="panel-heading"><div><h3>Coming up</h3><p>Deadlines in the next 7 days</p></div><span className="panel-count">{tasks.filter(t=>isOpen(t)&&t.deadline&&t.deadline>=today&&t.deadline<=addDays(today,7)).length}</span></div>
-              <div className="compact-task-list">{tasks.filter(t=>isOpen(t)&&t.deadline&&t.deadline>=today&&t.deadline<=addDays(today,7)).sort((a,b)=>a.deadline.localeCompare(b.deadline)).slice(0,6).map(t=><CompactTask key={t.id} task={t} business={businesses.find(b=>b.id===t.business_id)} onClick={()=>{setActive(t.business_id);setEditingTask(t);setModal("task");}} today={today}/>)}
-              {!tasks.some(t=>isOpen(t)&&t.deadline&&t.deadline>=today&&t.deadline<=addDays(today,7))&&<div className="compact-empty">Nothing due this week. You're in a good spot.</div>}</div>
-            </div>
-            <div className="overview-panel panel-attention"><div className="panel-heading"><div><h3>Needs attention</h3><p>Past due deadlines</p></div><span className="panel-count panel-count-coral">{overdueTasks.length}</span></div>
-              <div className="compact-task-list">{overdueTasks.slice(0,6).map(t=><CompactTask key={t.id} task={t} business={businesses.find(b=>b.id===t.business_id)} onClick={()=>{setActive(t.business_id);setEditingTask(t);setModal("task");}} today={today}/>)}
-              {!overdueTasks.length&&<div className="compact-empty"><CircleCheck size={17}/>All clear. No overdue tasks.</div>}</div>
-            </div>
-            <div className="overview-panel panel-full"><div className="panel-heading"><div><h3>Recently updated</h3><p>Your latest task activity</p></div><span className="panel-count">{recentTasks.length}</span></div>
-              <div className="recent-grid">{recentTasks.map(t=><button className="recent-card" key={t.id} onClick={()=>{setActive(t.business_id);setEditingTask(t);setModal("task");}}><span>{businesses.find(b=>b.id===t.business_id)?.name||"Business"}</span><strong>{t.title}</strong><small>Updated {shortDateTime(t.updated_at)}</small></button>)}
-                {!recentTasks.length&&<div className="compact-empty">No activity yet. Your tasks will appear here as you add them.</div>}</div>
-            </div>
+          <div className="progress-panel">
+            <div className="progress-heading"><strong>Overall progress</strong><span>{progressPercent}% · {completedTasks.length}/{overviewTasks.length} done</span></div>
+            <div className="progress-track"><i style={{width:progressPercent+"%"}}/></div>
           </div>
+          <div className="overview-task-heading">
+            <strong>All tasks</strong><span>{overviewTasksSorted.length}</span>
+            <div className="view-toggle"><button className={listMode?"selected":""} onClick={()=>setListMode(true)} aria-label="List view"><List size={16}/></button><button className={!listMode?"selected":""} onClick={()=>setListMode(false)} aria-label="Card view"><Grid2X2 size={16}/></button></div>
+          </div>
+          {loading?<div className="loading-block">Loading…</div>:overviewTasksSorted.length?<div className={listMode?"task-list-mode":"task-masonry"}>{overviewTasksSorted.map(t=>taskCard(t,true))}</div>:<EmptyState title="No tasks yet" description="Add a task to see it here." action={<Button onClick={openNewTask}><Plus size={15}/> Add task</Button>}/>}
         </section> : selectedBusiness ? <section className="page-section">
-          <div className="business-hero"><div><span className="eyebrow">BUSINESS WORKSPACE</span><h2>{selectedBusiness.name}</h2><p>{tasks.filter(t=>t.business_id===active&&isOpen(t)).length} open · {tasks.filter(t=>t.business_id===active&&t.status==="done").length} completed</p></div><div className="business-actions"><Button variant="secondary" onClick={()=>setModal("categories")}><Tag size={15}/> Categories</Button><Button onClick={openNewTask}><Plus size={16}/> Add task</Button></div></div>
-          <div className="business-stats"><MiniStat label="Open" value={tasks.filter(t=>t.business_id===active&&isOpen(t)).length}/><MiniStat label="Urgent" value={tasks.filter(t=>t.business_id===active&&(isDueSoon(t,today)||(isOpen(t)&&t.priority==="urgent"))).length}/><MiniStat label="Overdue" value={tasks.filter(t=>t.business_id===active&&isOverdue(t,today)).length}/><MiniStat label="Done" value={tasks.filter(t=>t.business_id===active&&t.status==="done").length}/></div>
-          <div className="filters-panel">
+          <div className="business-hero business-hero-compact">
+            <div className="business-summary"><strong>{tasks.filter(t=>t.business_id===active).length} tasks</strong><span>{progressFor(active).percent}% complete</span></div>
+            <div className="business-actions">
+              <div className="view-toggle"><button className={listMode?"selected":""} onClick={()=>setListMode(true)} aria-label="List view"><List size={16}/></button><button className={!listMode?"selected":""} onClick={()=>setListMode(false)} aria-label="Card view"><Grid2X2 size={16}/></button></div>
+              <IconButton label="Filters" className={`filter-toggle ${activeFilterCount?"filter-active":""}`} onClick={()=>setFiltersOpen(v=>!v)}><Filter size={17}/>{activeFilterCount>0&&<span>{activeFilterCount}</span>}</IconButton>
+              <Button variant="secondary" onClick={()=>setModal("categories")}><Tag size={15}/> Categories</Button>
+              <Button onClick={openNewTask}><Plus size={16}/> Add task</Button>
+            </div>
+          </div>
+          <div className="progress-panel business-progress-panel"><div className="progress-heading"><strong>Progress</strong><span>{progressFor(active).percent}% · {progressFor(active).done}/{progressFor(active).total} done</span></div><div className="progress-track"><i style={{width:progressFor(active).percent+"%"}}/></div></div>
+          <div className="business-stats"><MiniStat label="Open" value={tasks.filter(t=>t.business_id===active&&isOpen(t)).length}/><MiniStat label="Urgent" value={tasks.filter(t=>t.business_id===active&&(isDueSoon(t,today)||(isOpen(t)&&t.priority==="urgent"))).length}/><MiniStat label="Delayed" value={tasks.filter(t=>t.business_id===active&&isOverdue(t,today)).length}/><MiniStat label="Done" value={tasks.filter(t=>t.business_id===active&&t.status==="done").length}/></div>
+          {filtersOpen&&<div className="filters-panel">
             <div className="filters-title"><div><SlidersHorizontal size={16}/><strong>Filter tasks</strong></div><button onClick={clearFilters}>Clear all</button></div>
             <div className="filters-grid">
               <label className="filter-field"><span>Category</span><select value={filters.category} onChange={e=>setFilters(f=>({...f,category:e.target.value}))}><option value="">All categories</option>{categories.filter(c=>c.business_id===active).map(c=><option value={c.id} key={c.id}>{c.name}</option>)}</select></label>
               <label className="filter-field"><span>Status</span><select value={filters.status} onChange={e=>setFilters(f=>({...f,status:e.target.value}))}><option value="">All statuses</option>{STATUSES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select></label>
               <label className="filter-field"><span>Priority</span><select value={filters.priority} onChange={e=>setFilters(f=>({...f,priority:e.target.value}))}><option value="">All priorities</option>{PRIORITIES.map(p=><option key={p.value} value={p.value}>{p.label}</option>)}</select></label>
-              <label className="filter-field"><span>Deadline state</span><select value={filters.deadlineState} onChange={e=>setFilters(f=>({...f,deadlineState:e.target.value}))}><option value="">Any deadline</option><option value="overdue">Overdue</option><option value="urgent">Due within 2 days</option><option value="none">No deadline</option></select></label>
+              <label className="filter-field"><span>Deadline state</span><select value={filters.deadlineState} onChange={e=>setFilters(f=>({...f,deadlineState:e.target.value}))}><option value="">Any deadline</option><option value="overdue">Delayed</option><option value="urgent">Due within 2 days</option><option value="none">No deadline</option></select></label>
               <label className="filter-field"><span>Due from</span><input type="date" value={filters.dueFrom} onChange={e=>setFilters(f=>({...f,dueFrom:e.target.value}))}/></label>
               <label className="filter-field"><span>Due to</span><input type="date" value={filters.dueTo} onChange={e=>setFilters(f=>({...f,dueTo:e.target.value}))}/></label>
               <label className="filter-field"><span>Created from</span><input type="date" value={filters.createdFrom} onChange={e=>setFilters(f=>({...f,createdFrom:e.target.value}))}/></label>
@@ -425,8 +475,8 @@ function App() {
               <label className="filter-field filter-sort"><span>Sort by</span><select value={filters.sort} onChange={e=>setFilters(f=>({...f,sort:e.target.value}))}><option value="deadline">Deadline soonest</option><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="priority">Priority</option></select></label>
               <div className="view-toggle"><button className={!listMode?"selected":""} onClick={()=>setListMode(false)} aria-label="Grid view"><Grid2X2 size={16}/></button><button className={listMode?"selected":""} onClick={()=>setListMode(true)} aria-label="List view"><List size={17}/></button></div>
             </div>
-          </div>
-          <div className="task-results-heading"><span>{businessFiltered.length} {businessFiltered.length===1?"task":"tasks"}</span><span>{filters.category||filters.status||filters.priority||filters.deadlineState||filters.dueFrom||filters.dueTo||filters.createdFrom||filters.createdTo?"Filtered results":"All tasks for "+selectedBusiness.name}</span></div>
+          </div>}
+          <div className="task-results-heading"><span>{businessFiltered.length} tasks</span><button onClick={clearFilters}>Clear filters</button></div>
           {loading?<div className="loading-block">Loading tasks…</div>:businessFiltered.length?<div className={listMode?"task-list-mode":"task-masonry"}>{businessFiltered.map(t=>taskCard(t))}</div>:<EmptyState title={tasks.some(t=>t.business_id===active)?"No tasks match these filters":"A fresh start."} description={tasks.some(t=>t.business_id===active)?"Try adjusting your filters, or clear them to see all tasks.":`Add the first task for ${selectedBusiness.name} and keep everything moving.`} action={<Button onClick={openNewTask}><Plus size={15}/> Add a task</Button>}/>}
         </section> : <EmptyState title="No business selected" description="Add a business to get started." action={<Button onClick={()=>setModal("businesses")}>Add business</Button>}/>}
       </div>
