@@ -1240,3 +1240,31 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .sidebar.sidebar-collapsed .owner-row { padding:8px 9px 12px; justify-content:flex-start; }
   .sidebar.sidebar-collapsed .sidebar-bottom { display:block; }
 }
+
+
+/* Keep the Overview icon visually consistent with the business badges in the collapsed rail. */
+.sidebar-collapsed .overview-bullet {
+  width:34px;
+  height:34px;
+  flex:0 0 34px;
+  display:grid;
+  place-items:center;
+  border-radius:50%;
+  background:#f0f0f0;
+  color:#62625b;
+}
+.sidebar-collapsed .sidebar-link.is-active .overview-bullet {
+  background:#d5d5d0;
+  color:#111;
+}
+@media (max-width:900px) {
+  .sidebar.sidebar-collapsed .overview-bullet {
+    width:20px;
+    height:20px;
+    flex:0 0 20px;
+    display:inline-flex;
+    border-radius:0;
+    background:transparent;
+    color:inherit;
+  }
+}
