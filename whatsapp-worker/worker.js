@@ -166,7 +166,7 @@ async function triggerOwnerDeadlineReminderSweep(force=false){
       method:"POST",
       headers:{"Content-Type":"application/json","x-taskxvs-scheduler-token":token},
       body:"{}",
-      signal:AbortSignal.timeout(20000)
+      signal:AbortSignal.timeout(60000)
     });
     if(!response.ok){
       const body=(await response.text()).slice(0,250);
