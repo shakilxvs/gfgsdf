@@ -20,14 +20,6 @@ const SESSION_SECRET = process.env.SESSION_SECRET || "";
 const DATABASE_URL = process.env.DATABASE_URL || "";
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 const RESEND_FROM = process.env.RESEND_FROM || "";
-const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN || "";
-const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || "";
-const WHATSAPP_API_VERSION = process.env.WHATSAPP_API_VERSION || "";
-const WHATSAPP_TEMPLATE_NAME = process.env.WHATSAPP_TEMPLATE_NAME || "";
-const WHATSAPP_TEMPLATE_LANGUAGE = process.env.WHATSAPP_TEMPLATE_LANGUAGE || "en";
-const WHATSAPP_APP_SECRET = process.env.WHATSAPP_APP_SECRET || "";
-const WHATSAPP_WEBHOOK_VERIFY_TOKEN = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || "";
-const WHATSAPP_CONFIGURED = Boolean(WHATSAPP_ACCESS_TOKEN && WHATSAPP_PHONE_NUMBER_ID && WHATSAPP_API_VERSION && WHATSAPP_TEMPLATE_NAME);
 
 if (!DATABASE_URL || !OWNER_PASSWORD_SALT || !OWNER_PASSWORD_HASH || !SESSION_SECRET) {
   console.error("Required application secrets are missing.");
@@ -253,6 +245,38 @@ function normalizeWhatsAppNumber(raw) {
   if(!/^\+[1-9]\d{7,14}$/.test(normalized))throw Object.assign(new Error("Enter a WhatsApp number in international format, e.g. +8801XXXXXXXXX."),{status:400});
   return normalized;
 }
+function encryptWorkspaceSecret(value) {
+  const key=crypto.createHash("sha256").update(SESSION_SECRET).digest();
+  const iv=crypto.randomBytes(12);
+  const cipher=crypto.createCipheriv("aes-256-gcm",key,iv);
+  const encrypted=Buffer.concat([cipher.update(String(value),"utf8"),cipher.final()]);
+  return {version:1,iv:iv.toString("base64"),tag:cipher.getAuthTag().toString("base64"),data:encrypted.toString("base64")};
+}
+function decryptWorkspaceSecret(payload) {
+  if(!payload||payload.version!==1||!payload.iv||!payload.tag||!payload.data)return "";
+  const key=crypto.createHash("sha256").update(SESSION_SECRET).digest();
+  const decipher=crypto.createDecipheriv("aes-256-gcm",key,Buffer.from(payload.iv,"base64"));
+  decipher.setAuthTag(Buffer.from(payload.tag,"base64"));
+  return Buffer.concat([decipher.update(Buffer.from(payload.data,"base64")),decipher.final()]).toString("utf8");
+}
+async function getTextMeFlowSettings() {
+  const result=await pool.query("SELECT setting_value FROM workspace_settings WHERE setting_key='textmeflow_whatsapp' LIMIT 1");
+  const value=result.rows[0]?.setting_value||{};
+  let apiKey="";
+  try{apiKey=decryptWorkspaceSecret(value.encrypted_api_key);}catch(error){console.error("TextMeFlow API key decrypt failed:",error.message);}
+  return {enabled:value.enabled===true,apiKey,connected:Boolean(apiKey&&value.enabled===true),senderNumber:value.sender_number||""};
+}
+async function verifyTextMeFlowKey(apiKey) {
+  const response=await fetch("https://api.textmeflow.eu/v1/accounts/me",{
+    method:"GET",
+    headers:{Authorization:"Bearer "+apiKey,Accept:"application/json"},
+    signal:AbortSignal.timeout(12000)
+  });
+  const body=await response.json().catch(()=>({}));
+  if(!response.ok)throw Object.assign(new Error(body?.error?.message||body?.message||"TextMeFlow rejected this API key. Check it in your TextMeFlow portal."),{status:400});
+  return body;
+}
+
 function escapeHtml(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 async function sendBusinessNotification(business,event,task){
  if(!business?.email_notifications||!business.notification_email||!RESEND_API_KEY||!RESEND_FROM)return false;
