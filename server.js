@@ -185,31 +185,39 @@ function validEmailList(raw) {
   const emails = String(raw).split(/[;,\s]+/).filter(Boolean);
   return emails.length <= 10 && emails.every(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
 }
-async function sendBusinessNotification(business, event, task) {
-  if (!business?.email_notifications || !business.notification_email || !RESEND_API_KEY || !RESEND_FROM) return;
-  const recipients = business.notification_email.split(/[;,\s]+/).filter(Boolean);
-  if (!recipients.length) return;
-  const subject = `[${business.name}] ${event}: ${task.title}`;
-  const plain = [
-    `Business: ${business.name}`, `Activity: ${event}`, `Task: ${task.title}`,
-    task.deadline ? `Deadline: ${task.deadline}` : "Deadline: Not set",
-    `Status: ${task.status}`, task.description || ""
-  ].filter(Boolean).join("\n");
-  try {
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: RESEND_FROM, to: recipients, subject, text: plain })
-    });
-    if (!response.ok) {
-      const message = await response.text();
-      console.error("Task notification email failed:", response.status, message.slice(0, 500));
-    }
-  } catch (error) { console.error("Task notification email error:", error.message); }
+function escapeHtml(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+async function sendBusinessNotification(business,event,task){
+ if(!business?.email_notifications||!business.notification_email||!RESEND_API_KEY||!RESEND_FROM)return false;
+ const to=business.notification_email.split(/[;,\s]+/).filter(Boolean);if(!to.length)return false;
+ const intro={"Task added":"A new task has been added to your workspace.","Task delayed":"The deadline has passed and this task still needs attention.","Task done":"This task has been marked as done.","In progress":"Work has started on this task."}[event]||"There is an update to your workspace.";
+ const esc=escapeHtml,deadline=task.deadline?new Date(task.deadline+"T00:00:00Z").toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric",timeZone:"UTC"}):"No deadline set";
+ const status=event==="Task delayed"?"Delayed":task.status==="done"?"Done":task.status==="in_progress"?"In progress":"To do",subject=`[${business.name}] ${event}: ${task.title}`;
+ const text=[`TASKXVS · ${event}`,intro,`Business: ${business.name}`,`Task: ${task.title}`,`Deadline: ${deadline}`,`Status: ${status}`,`Priority: ${task.priority||"normal"}`,task.description||"",task.completion_note?`Completion note: ${task.completion_note}`:"","https://taskxvs.onrender.com"].filter(Boolean).join("\\n\\n");
+ const accent=event==="Task delayed"?"#e60023":event==="Task done"?"#287044":"#333333";
+ const html=`<!doctype html><html><body style="margin:0;padding:28px 12px;background:#f5f5f3;font-family:Arial,sans-serif;color:#171717"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;margin:auto;background:#fff;border:1px solid #e7e7e3;border-radius:18px"><tr><td style="padding:22px 26px;border-bottom:1px solid #eee"><b style="display:inline-block;padding:9px 12px;background:#e60023;color:white;border-radius:9px">X</b><b style="padding-left:10px;letter-spacing:2px">TASKXVS</b><span style="float:right;color:#777;font-size:12px;padding-top:10px">${esc(business.name)}</span></td></tr><tr><td style="padding:30px 26px"><span style="font-size:11px;font-weight:bold;letter-spacing:1px;color:${accent}">${esc(event.toUpperCase())}</span><h1 style="font-size:26px;line-height:1.2;margin:14px 0 8px">${esc(event)}</h1><p style="font-size:14px;line-height:1.6;color:#666;margin:0 0 22px">${esc(intro)}</p><div style="padding:19px;border:1px solid #e8e8e4;border-radius:13px"><small style="color:#888">TASK</small><h2 style="font-size:19px;margin:8px 0">${esc(task.title)}</h2>${task.description?`<p style="font-size:13px;line-height:1.6;color:#666">${esc(task.description)}</p>`:""}<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-top:1px solid #eee;margin-top:16px"><tr><td style="padding-top:12px;color:#888;font-size:11px">DEADLINE</td><td align="right" style="padding-top:12px;font-size:12px;font-weight:bold">${esc(deadline)}</td></tr><tr><td style="padding-top:10px;color:#888;font-size:11px">STATUS</td><td align="right" style="padding-top:10px;font-size:12px;font-weight:bold">${esc(status)}</td></tr><tr><td style="padding-top:10px;color:#888;font-size:11px">PRIORITY</td><td align="right" style="padding-top:10px;font-size:12px;font-weight:bold;text-transform:capitalize">${esc(task.priority||"normal")}</td></tr></table>${task.completion_note?`<p style="margin:16px 0 0;padding:13px;background:#f3f6f2;border-radius:9px;font-size:13px;line-height:1.6"><b>Completion note</b><br>${esc(task.completion_note)}</p>`:""}</div><p style="margin:24px 0"><a href="https://taskxvs.onrender.com" style="display:inline-block;padding:13px 20px;border-radius:999px;background:#e60023;color:#fff;text-decoration:none;font-weight:bold;font-size:13px">Open TaskXVS →</a></p></td></tr><tr><td style="padding:18px 26px;background:#fafaf9;border-top:1px solid #eee;color:#888;font-size:11px">Notifications are enabled for ${esc(business.name)}.<br>TaskXVS · ShakilXVS Workspace</td></tr></table></body></html>`;
+ try {
+  const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:`Bearer ${RESEND_API_KEY}`,"Content-Type":"application/json"},body:JSON.stringify({from:RESEND_FROM,to,subject,html,text})});
+  if(!response.ok){console.error("Task notification email failed:",response.status,(await response.text()).slice(0,500));return false;}
+  return true;
+ } catch(error){console.error("Task notification email error:",error.message);return false;}
 }
 async function businessRow(businessId) {
   const result = await pool.query("SELECT * FROM businesses WHERE id=$1", [businessId]);
   return result.rows[0] || null;
+}
+async function checkDelayedTaskNotifications() {
+  if(!RESEND_API_KEY||!RESEND_FROM)return;
+  const due=await pool.query(`SELECT t.*,b.name AS business_name,b.notification_email,b.email_notifications
+    FROM tasks t JOIN businesses b ON b.id=t.business_id
+    WHERE t.status <> 'done' AND t.deadline < (now() AT TIME ZONE 'Asia/Dhaka')::date
+      AND t.delayed_notified_at IS NULL AND b.email_notifications=true
+      AND b.notification_email IS NOT NULL AND b.notification_email <> ''`);
+  for(const task of due.rows){
+    const claim=await pool.query("UPDATE tasks SET delayed_notified_at=now() WHERE id=$1 AND delayed_notified_at IS NULL RETURNING id",[task.id]);
+    if(!claim.rowCount)continue;
+    const sent=await sendBusinessNotification({name:task.business_name,notification_email:task.notification_email,email_notifications:task.email_notifications},"Task delayed",task);
+    if(!sent)await pool.query("UPDATE tasks SET delayed_notified_at=NULL WHERE id=$1",[task.id]);
+  }
 }
 async function initDatabase() {
   await pool.query("SELECT 1");
@@ -466,6 +474,7 @@ function normalizeTask(body) {
 app.post("/api/tasks",requireAuth,async(req,res,next)=>{
   try{
     const v=normalizeTask(req.body||{});
+    if(v.status==="done"&&existing.rows[0].status!=="done")return res.status(400).json({error:"Use the task completion confirmation to mark this task done."});
     if(!await requireBusinessAccess(req,res,v.business_id,true))return;
     const result=await pool.query(
       `INSERT INTO tasks (business_id,category_id,title,description,notes,status,priority,created_date,start_date,deadline,completed_at)
@@ -474,7 +483,7 @@ app.post("/api/tasks",requireAuth,async(req,res,next)=>{
     );
     res.status(201).json(result.rows[0]);
     const business=await businessRow(v.business_id);
-    sendBusinessNotification(business,"New task",result.rows[0]);
+    sendBusinessNotification(business,"Task added",result.rows[0]);
   }catch(e){
     if(e.code==="23503")return res.status(400).json({error:"That category does not belong to the selected business."});
     if(e.code==="23514")return res.status(400).json({error:"Task details failed validation."});
@@ -483,33 +492,56 @@ app.post("/api/tasks",requireAuth,async(req,res,next)=>{
 });
 app.patch("/api/tasks/:id",requireAuth,async(req,res,next)=>{
   try{
-    const existing=await pool.query("SELECT business_id FROM tasks WHERE id=$1",[req.params.id]);
+    const existing=await pool.query("SELECT * FROM tasks WHERE id=$1",[req.params.id]);
     if(!existing.rowCount)return res.status(404).json({error:"Task not found."});
     if(!await requireBusinessAccess(req,res,existing.rows[0].business_id,true))return;
     const v=normalizeTask(req.body||{});
     if(!await requireBusinessAccess(req,res,v.business_id,true))return;
     const result=await pool.query(
       `UPDATE tasks SET business_id=$2,category_id=$3,title=$4,description=$5,notes=$6,status=$7,priority=$8,created_date=$9,start_date=$10,deadline=$11,
-       completed_at=CASE WHEN $7='done' THEN COALESCE(completed_at,now()) ELSE NULL END WHERE id=$1 RETURNING *`,
+       completed_at=CASE WHEN $7='done' THEN COALESCE(completed_at,now()) ELSE NULL END,
+       delayed_notified_at=CASE WHEN $7='done' OR $11 IS NULL OR $11 >= (now() AT TIME ZONE 'Asia/Dhaka')::date THEN NULL ELSE delayed_notified_at END WHERE id=$1 RETURNING *`,
       [req.params.id,v.business_id,v.category_id,v.title,v.description,v.notes,v.status,v.priority,v.created_date,v.start_date,v.deadline]
     );
     res.json(result.rows[0]);
-    const business=await businessRow(v.business_id);
-    sendBusinessNotification(business,"Task updated",result.rows[0]);
+    if(existing.rows[0].status!=="in_progress"&&result.rows[0].status==="in_progress"){
+      const business=await businessRow(v.business_id);
+      sendBusinessNotification(business,"In progress",result.rows[0]);
+    }
   }catch(e){
     if(e.code==="23503")return res.status(400).json({error:"That category does not belong to the selected business."});
     if(e.code==="23514")return res.status(400).json({error:"Task details failed validation."});
     next(e);
   }
 });
+app.patch("/api/tasks/:id/status",requireAuth,async(req,res,next)=>{
+  try{
+    const current=await pool.query("SELECT * FROM tasks WHERE id=$1",[req.params.id]);
+    if(!current.rowCount)return res.status(404).json({error:"Task not found."});
+    const task=current.rows[0];
+    if(!await requireBusinessAccess(req,res,task.business_id,true))return;
+    const status=String(req.body?.status||"");
+    const note=String(req.body?.completion_note||"").trim();
+    if(!["todo","in_progress","done"].includes(status))return res.status(400).json({error:"Invalid task status."});
+    if(note.length>3000)return res.status(400).json({error:"Completion note must be under 3,000 characters."});
+    if(status==="done"&&task.status!=="done"&&!req.body?.confirm_completion)return res.status(400).json({error:"Confirm completion before marking this task done."});
+    const updated=await pool.query(`UPDATE tasks SET status=$2,
+      completed_at=CASE WHEN $2='done' THEN COALESCE(completed_at,now()) ELSE NULL END,
+      completion_note=CASE WHEN $2='done' THEN NULLIF($3,'') ELSE completion_note END,
+      delayed_notified_at=CASE WHEN $2='done' THEN NULL ELSE delayed_notified_at END
+      WHERE id=$1 RETURNING *`,[req.params.id,status,note]);
+    res.json(updated.rows[0]);
+    const business=await businessRow(task.business_id);
+    if(task.status!==status&&status==="done")sendBusinessNotification(business,"Task done",updated.rows[0]);
+    else if(task.status!==status&&status==="in_progress")sendBusinessNotification(business,"In progress",updated.rows[0]);
+  }catch(e){next(e);}
+});
 app.delete("/api/tasks/:id",requireAuth,async(req,res,next)=>{
   try{
     const current=await pool.query("SELECT * FROM tasks WHERE id=$1",[req.params.id]);
     if(!current.rowCount)return res.status(404).json({error:"Task not found."});
     if(!await requireBusinessAccess(req,res,current.rows[0].business_id,true))return;
-    const business=await businessRow(current.rows[0].business_id);
     await pool.query("DELETE FROM tasks WHERE id=$1",[req.params.id]);
-    sendBusinessNotification(business,"Task deleted",current.rows[0]);
     res.json({ok:true});
   }catch(e){next(e);}
 });
@@ -528,6 +560,10 @@ app.use((err,_req,res,_next)=>{
   console.error(err);
   res.status(err.status||500).json({error:err.status?err.message:"Something went wrong. Please try again."});
 });
-initDatabase().then(()=>app.listen(PORT,"0.0.0.0",()=>console.log(`TaskXVS listening on ${PORT}`)))
-  .catch(error=>{console.error("Database initialization failed:",error);process.exit(1);});
+initDatabase().then(()=>{
+  app.listen(PORT,"0.0.0.0",()=>console.log(`TaskXVS listening on ${PORT}`));
+  checkDelayedTaskNotifications().catch(error=>console.error("Delayed task check failed:",error.message));
+  const delayedTimer=setInterval(()=>checkDelayedTaskNotifications().catch(error=>console.error("Delayed task check failed:",error.message)),15*60*1000);
+  delayedTimer.unref();
+}).catch(error=>{console.error("Database initialization failed:",error);process.exit(1);});
 process.on("SIGTERM",async()=>{await pool.end();process.exit(0);});
