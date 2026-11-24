@@ -7,7 +7,8 @@ import makeWASocket, {
   makeCacheableSignalKeyStore,
   proto
 } from "@whiskeysockets/baileys";
-import { Pool } from "pg";
+import pg from "pg";
+const { Pool } = pg;
 import pino from "pino";
 import QRCode from "qrcode";
 
@@ -264,6 +265,9 @@ async function runSocketSession() {
 }
 
 async function main() {
+  await pool.query("SELECT 1 FROM whatsapp_gateway.gateway_state LIMIT 1");
+  await pool.query("SELECT 1 FROM whatsapp_gateway.auth_kv LIMIT 1");
+  await pool.query("SELECT 1 FROM whatsapp_gateway.outbound_queue LIMIT 1");
   await pool.query(
     "UPDATE whatsapp_gateway.outbound_queue SET status='queued',updated_at=now() WHERE status='sending' AND updated_at < now() - interval '10 minutes'"
   );
