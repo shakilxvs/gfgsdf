@@ -1534,9 +1534,9 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 }
 
 
-/* TextMeFlow WhatsApp provider setup */
-.whatsapp-provider-settings { display:grid; gap:16px; }
-.whatsapp-provider-card {
+/* TaskXVS free WhatsApp cloud worker setup */
+.whatsapp-cloud-settings { display:grid; gap:16px; }
+.whatsapp-cloud-card {
   display:grid;
   grid-template-columns:42px minmax(0,1fr) auto;
   align-items:center;
@@ -1546,15 +1546,15 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   border-radius:14px;
   background:#fafaf9;
 }
-.whatsapp-provider-card.connected {
+.whatsapp-cloud-card.connected {
   border-color:#dce9df;
   background:#f5faf6;
 }
-.whatsapp-provider-card.pending {
+.whatsapp-cloud-card.pending {
   border-color:#ece2d2;
   background:#fffbf5;
 }
-.whatsapp-provider-symbol {
+.whatsapp-cloud-symbol {
   width:40px;
   height:40px;
   display:grid;
@@ -1563,9 +1563,9 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   background:#25d366;
   color:#fff;
 }
-.whatsapp-provider-copy { min-width:0; display:grid; gap:4px; }
-.whatsapp-provider-copy strong { color:#242424; font-size:13px; }
-.whatsapp-provider-copy span { color:#777; font-size:11px; line-height:1.45; }
+.whatsapp-cloud-copy { min-width:0; display:grid; gap:4px; }
+.whatsapp-cloud-copy strong { color:#242424; font-size:13px; }
+.whatsapp-cloud-copy span { color:#777; font-size:11px; line-height:1.45; }
 .provider-status {
   padding:6px 9px;
   border-radius:999px;
@@ -1575,11 +1575,11 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   font-weight:700;
   white-space:nowrap;
 }
-.whatsapp-provider-card.connected .provider-status {
+.whatsapp-cloud-card.connected .provider-status {
   color:#2d7148;
   background:#e5f2e8;
 }
-.whatsapp-provider-steps {
+.whatsapp-cloud-steps {
   display:grid;
   gap:7px;
   padding:15px;
@@ -1587,9 +1587,9 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   border-radius:13px;
   background:#fff;
 }
-.whatsapp-provider-steps strong { margin-top:5px; color:#333; font-size:12px; }
-.whatsapp-provider-steps p { margin:0; color:#777; font-size:11px; line-height:1.55; }
-.whatsapp-provider-steps a {
+.whatsapp-cloud-steps strong { margin-top:5px; color:#333; font-size:12px; }
+.whatsapp-cloud-steps p { margin:0; color:#777; font-size:11px; line-height:1.55; }
+.whatsapp-cloud-steps a {
   display:inline-flex;
   align-items:center;
   gap:5px;
@@ -1599,11 +1599,11 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   font-weight:700;
   text-decoration:none;
 }
-.whatsapp-provider-steps a:hover { text-decoration:underline; }
-.whatsapp-provider-steps b { color:#252525; font-size:13px; letter-spacing:.3px; }
-.whatsapp-provider-form { display:grid; gap:12px; }
-.whatsapp-provider-form .field span { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-.whatsapp-provider-form .field span i { color:#999; font-size:10px; font-style:normal; font-weight:400; }
+.whatsapp-cloud-steps a:hover { text-decoration:underline; }
+.whatsapp-cloud-steps b { color:#252525; font-size:13px; letter-spacing:.3px; }
+.whatsapp-cloud-form { display:grid; gap:12px; }
+.whatsapp-cloud-form .field span { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.whatsapp-cloud-form .field span i { color:#999; font-size:10px; font-style:normal; font-weight:400; }
 .whatsapp-test-row {
   display:flex;
   align-items:center;
@@ -1616,7 +1616,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .whatsapp-test-row > div { display:grid; gap:4px; }
 .whatsapp-test-row strong { color:#333; font-size:12px; }
 .whatsapp-test-row span { color:#888; font-size:10px; line-height:1.4; }
-.whatsapp-provider-warning {
+.whatsapp-cloud-warning {
   display:grid;
   grid-template-columns:18px minmax(0,1fr);
   gap:9px;
@@ -1626,5 +1626,51 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   color:#7b6346;
   background:#fffaf1;
 }
-.whatsapp-provider-warning svg { margin-top:1px; }
-.whatsapp-provider-warning p { margin:0; font-size:10px; line-height:1.55; }
+.whatsapp-cloud-warning svg { margin-top:1px; }
+.whatsapp-cloud-warning p { margin:0; font-size:10px; line-height:1.55; }
+
+.whatsapp-cloud-qr {
+  display:grid;
+  justify-items:center;
+  gap:9px;
+  padding:18px;
+  border:1px solid #e7e7e3;
+  border-radius:14px;
+  background:#fafaf9;
+  text-align:center;
+}
+.whatsapp-cloud-qr strong { color:#222; font-size:13px; }
+.whatsapp-cloud-qr p { max-width:380px; margin:0; color:#777; font-size:11px; line-height:1.55; }
+.whatsapp-cloud-qr img {
+  display:block;
+  width:min(100%,260px);
+  aspect-ratio:1;
+  padding:10px;
+  border:1px solid #eee;
+  border-radius:12px;
+  background:#fff;
+  image-rendering:pixelated;
+}
+.whatsapp-cloud-qr small { color:#777; font-size:10px; }
+.whatsapp-cloud-steps {
+  display:grid;
+  gap:7px;
+  padding:15px;
+  border:1px solid #ecece8;
+  border-radius:13px;
+  background:#fff;
+}
+.whatsapp-cloud-steps strong { color:#333; font-size:12px; }
+.whatsapp-cloud-steps p { margin:0; color:#777; font-size:11px; line-height:1.55; }
+.whatsapp-cloud-warning {
+  display:grid;
+  grid-template-columns:18px minmax(0,1fr);
+  gap:9px;
+  padding:12px 13px;
+  border:1px solid #eadfcf;
+  border-radius:12px;
+  color:#7b6346;
+  background:#fffaf1;
+}
+.whatsapp-cloud-warning svg { margin-top:1px; }
+.whatsapp-cloud-warning p { margin:0; font-size:10px; line-height:1.55; }

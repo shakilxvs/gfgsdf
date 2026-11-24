@@ -204,16 +204,19 @@ app.get("/api/auth/session", async (req, res) => {
 });
 app.get("/api/account",requireAuth,async(req,res,next)=>{
   try{
+    const gateway=await getWhatsAppGatewayStatus();
     if(req.auth.role==="owner"){
       const result=await pool.query("SELECT setting_value FROM workspace_settings WHERE setting_key='owner_whatsapp' LIMIT 1");
       const value=result.rows[0]?.setting_value||{};
-      const provider=await getTextMeFlowSettings();
-      return res.set("Cache-Control","no-store").json({whatsapp_number:value.whatsapp_number||"",whatsapp_notifications_enabled:Boolean(value.whatsapp_notifications_enabled),whatsapp_configured:provider.connected});
+      return res.set("Cache-Control","no-store").json({
+        whatsapp_number:value.whatsapp_number||"",
+        whatsapp_notifications_enabled:Boolean(value.whatsapp_notifications_enabled),
+        whatsapp_configured:gateway.connected
+      });
     }
     const result=await pool.query("SELECT whatsapp_number,whatsapp_notifications_enabled FROM users WHERE id=$1",[req.auth.id]);
     if(!result.rowCount)return res.status(404).json({error:"Account not found."});
-    const provider=await getTextMeFlowSettings();
-    res.set("Cache-Control","no-store").json({...result.rows[0],whatsapp_configured:provider.connected});
+    res.set("Cache-Control","no-store").json({...result.rows[0],whatsapp_configured:gateway.connected});
   }catch(e){next(e);}
 });
 app.patch("/api/account",requireAuth,async(req,res,next)=>{
@@ -227,8 +230,7 @@ app.patch("/api/account",requireAuth,async(req,res,next)=>{
     }
     const result=await pool.query("UPDATE users SET whatsapp_number=$2,whatsapp_notifications_enabled=$3,updated_at=now() WHERE id=$1 RETURNING whatsapp_number,whatsapp_notifications_enabled",[req.auth.id,phone,enabled]);
     if(!result.rowCount)return res.status(404).json({error:"Account not found."});
-    const provider=await getTextMeFlowSettings();
-    res.json({...result.rows[0],whatsapp_configured:provider.connected});
+    res.json(result.rows[0]);
   }catch(e){next(e);}
 });
 app.post("/api/auth/logout", (_req, res) => {
@@ -248,36 +250,20 @@ function normalizeWhatsAppNumber(raw) {
   if(!/^\+[1-9]\d{7,14}$/.test(normalized))throw Object.assign(new Error("Enter a WhatsApp number in international format, e.g. +8801XXXXXXXXX."),{status:400});
   return normalized;
 }
-function encryptWorkspaceSecret(value) {
-  const key=crypto.createHash("sha256").update(SESSION_SECRET).digest();
-  const iv=crypto.randomBytes(12);
-  const cipher=crypto.createCipheriv("aes-256-gcm",key,iv);
-  const encrypted=Buffer.concat([cipher.update(String(value),"utf8"),cipher.final()]);
-  return {version:1,iv:iv.toString("base64"),tag:cipher.getAuthTag().toString("base64"),data:encrypted.toString("base64")};
-}
-function decryptWorkspaceSecret(payload) {
-  if(!payload||payload.version!==1||!payload.iv||!payload.tag||!payload.data)return "";
-  const key=crypto.createHash("sha256").update(SESSION_SECRET).digest();
-  const decipher=crypto.createDecipheriv("aes-256-gcm",key,Buffer.from(payload.iv,"base64"));
-  decipher.setAuthTag(Buffer.from(payload.tag,"base64"));
-  return Buffer.concat([decipher.update(Buffer.from(payload.data,"base64")),decipher.final()]).toString("utf8");
-}
-async function getTextMeFlowSettings() {
-  const result=await pool.query("SELECT setting_value FROM workspace_settings WHERE setting_key='textmeflow_whatsapp' LIMIT 1");
-  const value=result.rows[0]?.setting_value||{};
-  let apiKey="";
-  try{apiKey=decryptWorkspaceSecret(value.encrypted_api_key);}catch(error){console.error("TextMeFlow API key decrypt failed:",error.message);}
-  return {enabled:value.enabled===true,apiKey,connected:Boolean(apiKey&&value.enabled===true),senderNumber:value.sender_number||""};
-}
-async function verifyTextMeFlowKey(apiKey) {
-  const response=await fetch("https://api.textmeflow.eu/v1/accounts/me",{
-    method:"GET",
-    headers:{Authorization:"Bearer "+apiKey,Accept:"application/json"},
-    signal:AbortSignal.timeout(12000)
-  });
-  const body=await response.json().catch(()=>({}));
-  if(!response.ok)throw Object.assign(new Error(body?.error?.message||body?.message||"TextMeFlow rejected this API key. Check it in your TextMeFlow portal."),{status:400});
-  return body;
+async function getWhatsAppGatewayStatus() {
+  const result=await pool.query(
+    "SELECT status,qr_data_url,phone_number,last_seen_at,last_error,updated_at FROM whatsapp_gateway.gateway_state WHERE id=true LIMIT 1"
+  );
+  const row=result.rows[0]||{};
+  return {
+    status:row.status||"disconnected",
+    connected:row.status==="connected",
+    qr_data_url:row.qr_data_url||"",
+    phone_number:row.phone_number||"",
+    last_seen_at:row.last_seen_at||null,
+    last_error:row.last_error||"",
+    updated_at:row.updated_at||null
+  };
 }
 
 function escapeHtml(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
@@ -296,32 +282,8 @@ async function sendBusinessNotification(business,event,task){
   return true;
  } catch(error){console.error("Task notification email error:",error.message);return false;}
 }
-let textMeFlowSendQueue=Promise.resolve();
-function queueTextMeFlowSend(task) {
-  const run=textMeFlowSendQueue.then(async()=>{
-    await new Promise(resolve=>setTimeout(resolve,1000));
-    return task();
-  });
-  textMeFlowSendQueue=run.catch(()=>{});
-  return run;
-}
-async function sendTextMeFlowMessage(apiKey,recipient,text) {
-  return queueTextMeFlowSend(async()=>{
-    const response=await fetch("https://api.textmeflow.eu/v1/messages",{
-      method:"POST",
-      headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json",Accept:"application/json"},
-      body:JSON.stringify({to:recipient,text}),
-      signal:AbortSignal.timeout(15000)
-    });
-    const body=await response.json().catch(()=>({}));
-    if(!response.ok)throw Object.assign(new Error(body?.error?.message||body?.message||("TextMeFlow returned HTTP "+response.status)),{status:response.status,code:body?.error?.code||body?.code||null});
-    return body;
-  });
-}
 async function sendBusinessWhatsAppNotification(businessId,event,task) {
   try{
-    const provider=await getTextMeFlowSettings();
-    if(!provider.enabled||!provider.apiKey)return;
     const business=await businessRow(businessId);
     if(!business)return;
     const recipients=[];
@@ -336,7 +298,7 @@ async function sendBusinessWhatsAppNotification(businessId,event,task) {
     const unique=new Map();
     for(const recipient of recipients){
       const normalized=String(recipient.number||"").replace(/\D/g,"");
-      if(normalized&&!unique.has(normalized))unique.set(normalized,recipient);
+      if(normalized&&!unique.has(normalized))unique.set(normalized,{...recipient,number:"+"+normalized});
     }
     const labels={"Task added":"Task added","Task updated":"Task updated","Task delayed":"Task delayed","Task done":"Task completed","In progress":"Task in progress","To do":"Task moved to To do","Task deleted":"Task deleted"};
     const eventLabel=labels[event]||event;
@@ -358,7 +320,7 @@ async function sendBusinessWhatsAppNotification(businessId,event,task) {
       "",
       taskUrl,
       "",
-      "You receive this because you opted in to TaskXVS notifications for this workspace. Reply STOP to opt out."
+      "You receive this because you opted in to TaskXVS notifications for this workspace."
     ].filter(Boolean).join("\n");
     for(const recipient of unique.values()){
       let logId=null;
@@ -368,47 +330,16 @@ async function sendBusinessWhatsAppNotification(businessId,event,task) {
           [recipient.userId,businessId,task?.id||null,event,recipient.number]
         );
         logId=log.rows[0].id;
-        const result=await sendTextMeFlowMessage(provider.apiKey,recipient.number,message);
-        const messageId=result.message_id||result.id||result.data?.message_id||null;
         await pool.query(
-          "UPDATE whatsapp_notification_logs SET status='queued',wamid=$2,sent_at=now() WHERE id=$1",
-          [logId,messageId]
+          "INSERT INTO whatsapp_gateway.outbound_queue (notification_log_id,recipient_number,message_body) VALUES ($1,$2,$3)",
+          [logId,recipient.number,message]
         );
       }catch(error){
-        const code=error.status===429?"rate_limited":error.code||null;
-        if(logId)await pool.query(
-          "UPDATE whatsapp_notification_logs SET status='failed',error_message=$2 WHERE id=$1",
-          [logId,String((code?code+": ":"")+error.message).slice(0,1000)]
-        ).catch(()=>{});
-        console.error("TextMeFlow WhatsApp notification failed:",error.message);
+        if(logId)await pool.query("UPDATE whatsapp_notification_logs SET status='failed',error_message=$2 WHERE id=$1",[logId,String(error.message).slice(0,1000)]).catch(()=>{});
+        console.error("WhatsApp notification queue failed:",error.message);
       }
     }
-  }catch(error){console.error("TextMeFlow recipient lookup failed:",error.message);}
-}
-async function refreshTextMeFlowDeliveryStatuses() {
-  try{
-    const provider=await getTextMeFlowSettings();
-    if(!provider.enabled||!provider.apiKey)return;
-    const pending=await pool.query(
-      "SELECT id,wamid FROM whatsapp_notification_logs WHERE status='queued' AND wamid IS NOT NULL ORDER BY created_at ASC LIMIT 20"
-    );
-    for(const row of pending.rows){
-      try{
-        const response=await fetch("https://api.textmeflow.eu/v1/messages/"+encodeURIComponent(row.wamid),{
-          headers:{Authorization:"Bearer "+provider.apiKey,Accept:"application/json"},
-          signal:AbortSignal.timeout(10000)
-        });
-        if(!response.ok)continue;
-        const body=await response.json().catch(()=>({}));
-        const state=String(body.status||body.data?.status||"").toLowerCase();
-        const mapped=state==="delivered"?"delivered":state==="read"?"read":state==="failed"?"failed":state==="sent"?"sent":null;
-        if(mapped)await pool.query(
-          "UPDATE whatsapp_notification_logs SET status=$2,delivered_at=CASE WHEN $2 IN ('delivered','read') THEN COALESCE(delivered_at,now()) ELSE delivered_at END,read_at=CASE WHEN $2='read' THEN COALESCE(read_at,now()) ELSE read_at END,error_message=CASE WHEN $2='failed' THEN $3 ELSE error_message END WHERE id=$1",
-          [row.id,mapped,body.error?.message||body.error||null]
-        );
-      }catch(error){console.error("TextMeFlow status check failed:",error.message);}
-    }
-  }catch(error){console.error("TextMeFlow status refresh failed:",error.message);}
+  }catch(error){console.error("WhatsApp recipient lookup failed:",error.message);}
 }
 async function businessRow(businessId) {
   const result = await pool.query("SELECT * FROM businesses WHERE id=$1", [businessId]);
@@ -454,7 +385,7 @@ app.get("/api/bootstrap", requireAuth, async (req, res, next) => {
       pool.query("SELECT * FROM categories WHERE business_id=ANY($1::uuid[]) ORDER BY position, lower(name)", [ids]),
       pool.query("SELECT * FROM tasks WHERE business_id=ANY($1::uuid[]) ORDER BY updated_at DESC", [ids])
     ]) : [{ rows: [] }, { rows: [] }];
-    const whatsapp=await getTextMeFlowSettings();
+    const whatsapp=await getWhatsAppGatewayStatus();
     res.set("Cache-Control", "no-store").json({
       businesses: businessRows, categories: categories.rows, tasks: tasks.rows,
       user: req.auth,
@@ -464,68 +395,35 @@ app.get("/api/bootstrap", requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-app.get("/api/admin/whatsapp/provider",requireAuth,requireOwner,async(req,res,next)=>{
+app.get("/api/admin/whatsapp/status",requireAuth,requireOwner,async(req,res,next)=>{
   try{
-    const settings=await getTextMeFlowSettings();
-    let accountValid=false;
-    if(settings.apiKey){try{await verifyTextMeFlowKey(settings.apiKey);accountValid=true;}catch(error){console.error("TextMeFlow key check:",error.message);}}
-    res.set("Cache-Control","no-store").json({configured:Boolean(settings.apiKey),enabled:settings.enabled,accountValid,senderNumber:settings.senderNumber});
-  }catch(e){next(e);}
-});
-app.put("/api/admin/whatsapp/provider",requireAuth,requireOwner,async(req,res,next)=>{
-  try{
-    const apiKey=String(req.body?.api_key||"").trim();
-    const senderNumber=normalizeWhatsAppNumber(req.body?.sender_number)||"";
-    if(apiKey.length<12||apiKey.length>500)return res.status(400).json({error:"Enter the API key from your TextMeFlow portal."});
-    await verifyTextMeFlowKey(apiKey);
-    const value={version:1,enabled:req.body?.enabled!==false,encrypted_api_key:encryptWorkspaceSecret(apiKey),sender_number:senderNumber};
-    await pool.query("INSERT INTO workspace_settings(setting_key,setting_value,updated_at) VALUES ('textmeflow_whatsapp',$1::jsonb,now()) ON CONFLICT(setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value,updated_at=now()",[JSON.stringify(value)]);
-    recordActivity(req,{event_type:"whatsapp_provider_connected",entity_type:"workspace_setting",title:"Connected TextMeFlow WhatsApp provider",details:{sender_number:senderNumber,enabled:value.enabled}});
-    res.json({ok:true,configured:true,enabled:value.enabled,senderNumber});
-  }catch(e){next(e);}
-});
-app.patch("/api/admin/whatsapp/provider",requireAuth,requireOwner,async(req,res,next)=>{
-  try{
-    const current=await getTextMeFlowSettings();
-    if(!current.apiKey)return res.status(404).json({error:"Connect TextMeFlow before changing these settings."});
-    const raw=await pool.query("SELECT setting_value FROM workspace_settings WHERE setting_key='textmeflow_whatsapp' LIMIT 1");
-    const value=raw.rows[0]?.setting_value||{};
-    if(typeof req.body?.enabled==="boolean")value.enabled=req.body.enabled;
-    if(req.body?.sender_number!==undefined)value.sender_number=normalizeWhatsAppNumber(req.body.sender_number)||"";
-    await pool.query("UPDATE workspace_settings SET setting_value=$1::jsonb,updated_at=now() WHERE setting_key='textmeflow_whatsapp'",[JSON.stringify(value)]);
-    res.json({ok:true,configured:true,enabled:value.enabled===true,senderNumber:value.sender_number||""});
-  }catch(e){next(e);}
-});
-app.delete("/api/admin/whatsapp/provider",requireAuth,requireOwner,async(req,res,next)=>{
-  try{
-    await pool.query("DELETE FROM workspace_settings WHERE setting_key='textmeflow_whatsapp'");
-    res.json({ok:true,configured:false});
-    recordActivity(req,{event_type:"whatsapp_provider_disconnected",entity_type:"workspace_setting",title:"Disconnected TextMeFlow WhatsApp provider",details:{}});
+    const state=await getWhatsAppGatewayStatus();
+    res.set("Cache-Control","no-store").json(state);
   }catch(e){next(e);}
 });
 app.post("/api/admin/whatsapp/test",requireAuth,requireOwner,async(req,res,next)=>{
   try{
-    const provider=await getTextMeFlowSettings();
-    if(!provider.enabled||!provider.apiKey)return res.status(400).json({error:"Connect and enable TextMeFlow first."});
     const ownerResult=await pool.query("SELECT setting_value FROM workspace_settings WHERE setting_key='owner_whatsapp' LIMIT 1");
     const owner=ownerResult.rows[0]?.setting_value||{};
-    if(!owner.whatsapp_number||owner.whatsapp_notifications_enabled!==true)return res.status(400).json({error:"Save your personal WhatsApp number and enable its notification opt-in under My account first."});
-    const message="TASKXVS test message\n\nYour WhatsApp notification connection is working.\n\nhttps://task.shakilxvs.com";
-    const log=await pool.query("INSERT INTO whatsapp_notification_logs (event_type,recipient_number,status) VALUES ('connection_test',$1,'queued') RETURNING id",[owner.whatsapp_number]);
-    const result=await sendTextMeFlowMessage(provider.apiKey,owner.whatsapp_number,message);
-    const messageId=result.message_id||result.id||result.data?.message_id||null;
-    await pool.query("UPDATE whatsapp_notification_logs SET status='queued',wamid=$2,sent_at=now() WHERE id=$1",[log.rows[0].id,messageId]);
-    res.json({ok:true,queued:true,message:"Test message queued for your WhatsApp number."});
+    if(!owner.whatsapp_number||owner.whatsapp_notifications_enabled!==true){
+      return res.status(400).json({error:"Save your WhatsApp number and enable notification opt-in under My account first."});
+    }
+    const message="TASKXVS test message\n\nYour cloud WhatsApp connection is ready.\n\nhttps://task.shakilxvs.com";
+    const log=await pool.query(
+      "INSERT INTO whatsapp_notification_logs (event_type,recipient_number,status) VALUES ('connection_test',$1,'queued') RETURNING id",
+      [owner.whatsapp_number]
+    );
+    await pool.query(
+      "INSERT INTO whatsapp_gateway.outbound_queue (notification_log_id,recipient_number,message_body) VALUES ($1,$2,$3)",
+      [log.rows[0].id,owner.whatsapp_number,message]
+    );
+    res.json({ok:true,queued:true,message:"Test message added to the cloud queue. It will send when the free worker is connected."});
   }catch(e){next(e);}
-});
-app.get("/api/admin/whatsapp/status",requireAuth,requireOwner,async(req,res,next)=>{
-  try{const settings=await getTextMeFlowSettings();res.set("Cache-Control","no-store").json({configured:Boolean(settings.apiKey),enabled:settings.enabled,senderNumber:settings.senderNumber});}
-  catch(e){next(e);}
 });
 app.get("/api/admin/whatsapp/logs",requireAuth,requireOwner,async(req,res,next)=>{
   try{
     const limit=Math.max(1,Math.min(100,Number.parseInt(req.query.limit,10)||50));
-    const result=await pool.query("SELECT l.id,l.event_type,l.recipient_number,l.status,l.error_message,l.created_at,l.sent_at,l.delivered_at,l.read_at,b.name AS business_name,t.title AS task_title,u.display_name AS recipient_name FROM whatsapp_notification_logs l LEFT JOIN businesses b ON b.id=l.business_id LEFT JOIN tasks t ON t.id=l.task_id LEFT JOIN users u ON u.id=l.recipient_user_id ORDER BY l.created_at DESC LIMIT $1",[limit]);
+    const result=await pool.query("SELECT l.id,l.event_type,l.recipient_number,COALESCE(q.status,l.status) AS status,COALESCE(q.error_message,l.error_message) AS error_message,l.created_at,COALESCE(q.sent_at,l.sent_at) AS sent_at,l.delivered_at,l.read_at,b.name AS business_name,t.title AS task_title,u.display_name AS recipient_name FROM whatsapp_notification_logs l LEFT JOIN whatsapp_gateway.outbound_queue q ON q.notification_log_id=l.id LEFT JOIN businesses b ON b.id=l.business_id LEFT JOIN tasks t ON t.id=l.task_id LEFT JOIN users u ON u.id=l.recipient_user_id ORDER BY l.created_at DESC LIMIT $1",[limit]);
     res.set("Cache-Control","no-store").json({logs:result.rows});
   }catch(e){next(e);}
 });
@@ -904,10 +802,7 @@ app.use((err,_req,res,_next)=>{
 initDatabase().then(()=>{
   app.listen(PORT,"0.0.0.0",()=>console.log(`TaskXVS listening on ${PORT}`));
   checkDelayedTaskNotifications().catch(error=>console.error("Delayed task check failed:",error.message));
-  refreshTextMeFlowDeliveryStatuses().catch(error=>console.error("WhatsApp delivery status check failed:",error.message));
   const delayedTimer=setInterval(()=>checkDelayedTaskNotifications().catch(error=>console.error("Delayed task check failed:",error.message)),15*60*1000);
-  const whatsappStatusTimer=setInterval(()=>refreshTextMeFlowDeliveryStatuses().catch(error=>console.error("WhatsApp delivery status check failed:",error.message)),60*1000);
   delayedTimer.unref();
-  whatsappStatusTimer.unref();
 }).catch(error=>{console.error("Database initialization failed:",error);process.exit(1);});
 process.on("SIGTERM",async()=>{await pool.end();process.exit(0);});
