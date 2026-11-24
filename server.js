@@ -370,6 +370,38 @@ app.get("/api/bootstrap", requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+app.get("/api/webhooks/whatsapp",(req,res)=>{
+  const mode=req.query["hub.mode"];
+  const token=req.query["hub.verify_token"];
+  const challenge=req.query["hub.challenge"];
+  if(mode==="subscribe"&&WHATSAPP_WEBHOOK_VERIFY_TOKEN&&token===WHATSAPP_WEBHOOK_VERIFY_TOKEN)return res.status(200).send(String(challenge||""));
+  res.sendStatus(403);
+});
+app.post("/api/webhooks/whatsapp",async(req,res)=>{
+  if(!WHATSAPP_APP_SECRET)return res.sendStatus(503);
+  const signature=String(req.get("x-hub-signature-256")||"");
+  const expected="sha256="+crypto.createHmac("sha256",WHATSAPP_APP_SECRET).update(req.rawBody||Buffer.alloc(0)).digest("hex");
+  if(!safeEqual(signature,expected))return res.sendStatus(401);
+  try{
+    for(const entry of req.body?.entry||[])for(const change of entry.changes||[])for(const status of change.value?.statuses||[]){
+      const state=["sent","delivered","read","failed"].includes(status.status)?status.status:null;
+      if(!state||!status.id)continue;
+      const errorText=status.errors?.map(e=>e.title||e.message).filter(Boolean).join("; ")||null;
+      await pool.query("UPDATE whatsapp_notification_logs SET status=$2,delivered_at=CASE WHEN $2 IN ('delivered','read') THEN COALESCE(delivered_at,to_timestamp($3::double precision)) ELSE delivered_at END,read_at=CASE WHEN $2='read' THEN COALESCE(read_at,to_timestamp($3::double precision)) ELSE read_at END,error_message=CASE WHEN $2='failed' THEN $4 ELSE error_message END WHERE wamid=$1",[status.id,state,Number(status.timestamp)||Date.now()/1000,errorText]);
+    }
+    res.sendStatus(200);
+  }catch(error){console.error("WhatsApp webhook processing failed:",error.message);res.sendStatus(500);}
+});
+app.get("/api/admin/whatsapp/status",requireAuth,requireOwner,async(req,res)=>{
+  res.set("Cache-Control","no-store").json({configured:WHATSAPP_CONFIGURED,senderPhoneNumberIdConfigured:Boolean(WHATSAPP_PHONE_NUMBER_ID),templateConfigured:Boolean(WHATSAPP_TEMPLATE_NAME),webhookConfigured:Boolean(WHATSAPP_APP_SECRET&&WHATSAPP_WEBHOOK_VERIFY_TOKEN)});
+});
+app.get("/api/admin/whatsapp/logs",requireAuth,requireOwner,async(req,res,next)=>{
+  try{
+    const limit=Math.max(1,Math.min(100,Number.parseInt(req.query.limit,10)||50));
+    const result=await pool.query("SELECT l.id,l.event_type,l.recipient_number,l.status,l.error_message,l.created_at,l.sent_at,l.delivered_at,l.read_at,b.name AS business_name,t.title AS task_title,u.display_name AS recipient_name FROM whatsapp_notification_logs l LEFT JOIN businesses b ON b.id=l.business_id LEFT JOIN tasks t ON t.id=l.task_id LEFT JOIN users u ON u.id=l.recipient_user_id ORDER BY l.created_at DESC LIMIT $1",[limit]);
+    res.set("Cache-Control","no-store").json({logs:result.rows});
+  }catch(e){next(e);}
+});
 app.get("/api/admin/activity",requireAuth,requireOwner,async(req,res,next)=>{
   try{
     const limit=Math.max(1,Math.min(100,Number.parseInt(req.query.limit,10)||60));
