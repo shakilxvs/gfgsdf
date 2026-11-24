@@ -711,7 +711,7 @@ function AccountSettings({account,onClose,onSave}) {
           <label className="field"><span>Your notification email</span><input type="email" autoComplete="email" value={activityEmail} onChange={e=>setActivityEmail(e.target.value)} placeholder="shakilxvs@gmail.com" required/></label>
           <label className="inline-check"><input type="checkbox" checked={activityEmailEnabled} onChange={e=>setActivityEmailEnabled(e.target.checked)}/> Email me whenever a task, business, category or team setting is changed</label>
           <p className="form-hint">Activity emails show who made the change, which business was affected and the details that changed. These owner emails are not sent to team members.</p>
-          <label className="inline-check"><input type="checkbox" checked={deadlineRemindersEnabled} onChange={e=>setDeadlineRemindersEnabled(e.target.checked)}/> Send me private deadline reminders at 2 days and 1 day before a task is due</label>
+          <label className="inline-check"><input type="checkbox" checked={deadlineRemindersEnabled} onChange={e=>setDeadlineRemindersEnabled(e.target.checked)}/> Send me private deadline reminders 7 days, 2 days and 1 day before a task is due</label>
           <p className="form-hint">Each reminder groups all open tasks due on that date across your businesses into one email.</p>
         </div>
         <div className="profile-preference-divider"/>

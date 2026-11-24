@@ -146,7 +146,9 @@ async function recordActivity(req,event) {
        JSON.stringify(event.details||{})]
     );
     const activityId=saved.rows[0]?.id;
-    if(activityId){
+    // Owner actions remain in the in-app activity history but do not email the owner.
+    // Only authenticated team-member actions generate owner activity emails.
+    if(activityId&&auth.role==="member"){
       void sendOwnerActivityEmail(auth,event,String(activityId))
         .catch(error=>console.error("Owner activity email failed:",error.message));
     }
@@ -154,20 +156,14 @@ async function recordActivity(req,event) {
 }
 async function recordSystemActivity(event) {
   try {
-    const saved=await pool.query(
+    await pool.query(
       `INSERT INTO activity_log
        (actor_id,actor_username,actor_display_name,event_type,entity_type,entity_id,business_id,title,details)
-       VALUES (NULL,'taskxvs-system','TaskXVS system',$1,$2,$3,$4,$5,$6::jsonb)
-       RETURNING id`,
+       VALUES (NULL,'taskxvs-system','TaskXVS system',$1,$2,$3,$4,$5,$6::jsonb)`,
       [event.event_type,event.entity_type,event.entity_id?String(event.entity_id):null,
        event.business_id?String(event.business_id):null,event.title||"Automatic workspace event",
        JSON.stringify(event.details||{})]
     );
-    const activityId=saved.rows[0]?.id;
-    if(activityId){
-      void sendOwnerActivityEmail({username:"taskxvs-system",displayName:"TaskXVS system"},event,String(activityId))
-        .catch(error=>console.error("Owner system activity email failed:",error.message));
-    }
   } catch(error) { console.error("System activity log write failed:",error.message); }
 }
 async function requireSameOrigin(req, res, next) {
@@ -438,6 +434,7 @@ function activityValueLabel(key,value){
 }
 async function sendOwnerActivityEmail(auth,event,activityId){
   try{
+    if(auth?.role!=="member")return false;
     const prefs=await getOwnerNotificationPreferences();
     if(!prefs.activity_email_enabled||!prefs.activity_email||!RESEND_API_KEY||!RESEND_FROM)return false;
     const businessResult=event.business_id
@@ -542,7 +539,7 @@ function buildDeadlineReminderEmail(tasks,prefs,daysBefore,sendDate,dueDate){
     groups.get(task.business_id).tasks.push(task);
   }
   const esc=escapeHtml;
-  const dayLabel=daysBefore===1?"tomorrow":"in 2 days";
+  const dayLabel=daysBefore===1?"tomorrow":`in ${daysBefore} days`;
   const businessSections=[...groups.values()].map(group=>{
     const items=group.tasks.map(task=>`<tr><td style="padding:13px 14px;border-top:1px solid #eee">
       <a href="https://task.shakilxvs.com/?business=${encodeURIComponent(group.id)}" style="color:#1f2721;font-size:13px;font-weight:700;text-decoration:none">${esc(task.title)}</a>
@@ -639,6 +636,7 @@ async function checkOwnerDeadlineReminders(){
     if(!prefs.deadline_reminders_enabled||!prefs.activity_email||!RESEND_API_KEY||!RESEND_FROM)return;
     const now=getZonedDateParts(prefs.timezone);
     if(now.hour<9)return;
+    await sendOwnerDeadlineReminder(now.date,7,prefs);
     await sendOwnerDeadlineReminder(now.date,2,prefs);
     await sendOwnerDeadlineReminder(now.date,1,prefs);
   }catch(error){
