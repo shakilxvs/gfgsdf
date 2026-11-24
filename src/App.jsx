@@ -11,7 +11,7 @@ import {
   NotebookPen, Instagram, ChartNoAxesCombined, ChartLine, ListChecks, PackageSearch,
   Truck, Boxes, Warehouse, ShoppingBasket, Headset, Microscope, Shapes, BadgePercent,
   Settings2, ShieldCheck, Users, UserPlus, Building2, CalendarClock, CircleUserRound,
-  Send, UserRound, LockKeyhole, MailCheck, BellRing
+  Send, MessageCircle, UserRound, LockKeyhole, MailCheck, BellRing
 } from "lucide-react";
 
 const ICONS = {
@@ -388,6 +388,88 @@ function UserManager({users,businesses,onClose,onSave,onDelete,onToggle}) {
   </Modal>;
 }
 
+function WhatsAppProviderSettings({onClose,notify}) {
+  const [status,setStatus]=useState({configured:false,enabled:false,accountValid:false,senderNumber:"+8801350588555"});
+  const [apiKey,setApiKey]=useState("");
+  const [senderNumber,setSenderNumber]=useState("+8801350588555");
+  const [loading,setLoading]=useState(true);
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState("");
+  useEffect(()=>{
+    let active=true;
+    api("/api/admin/whatsapp/provider").then(result=>{
+      if(!active)return;
+      setStatus(result);
+      if(result.senderNumber)setSenderNumber(result.senderNumber);
+    }).catch(err=>{if(active)setError(err.message);}).finally(()=>{if(active)setLoading(false);});
+    return ()=>{active=false;};
+  },[]);
+  async function connect(e){
+    e.preventDefault();setBusy(true);setError("");
+    try{
+      const result=await api("/api/admin/whatsapp/provider",{method:"PUT",body:JSON.stringify({api_key:apiKey,sender_number:senderNumber,enabled:true})});
+      setStatus({configured:true,enabled:true,accountValid:true,senderNumber:result.senderNumber});
+      setApiKey("");
+      notify("TextMeFlow API key verified and saved securely.");
+    }catch(err){setError(err.message);}
+    finally{setBusy(false);}
+  }
+  async function toggle(){
+    setBusy(true);setError("");
+    try{const result=await api("/api/admin/whatsapp/provider",{method:"PATCH",body:JSON.stringify({enabled:!status.enabled})});setStatus(current=>({...current,...result}));}
+    catch(err){setError(err.message);}
+    finally{setBusy(false);}
+  }
+  async function test(){
+    setBusy(true);setError("");
+    try{const result=await api("/api/admin/whatsapp/test",{method:"POST"});notify(result.message||"Test message queued.");}
+    catch(err){setError(err.message);}
+    finally{setBusy(false);}
+  }
+  async function disconnect(){
+    setBusy(true);setError("");
+    try{await api("/api/admin/whatsapp/provider",{method:"DELETE"});setStatus({configured:false,enabled:false,accountValid:false,senderNumber});setApiKey("");notify("WhatsApp provider disconnected.");}
+    catch(err){setError(err.message);}
+    finally{setBusy(false);}
+  }
+  return <Modal title="WhatsApp notifications" subtitle="Connect your dedicated WhatsApp sender to TaskXVS." onClose={onClose} wide>
+    <div className="whatsapp-provider-settings">
+      <div className={status.configured&&status.accountValid?"whatsapp-provider-card connected":"whatsapp-provider-card pending"}>
+        <div className="whatsapp-provider-symbol"><MessageCircle size={21}/></div>
+        <div className="whatsapp-provider-copy">
+          <strong>{status.configured&&status.accountValid?"TextMeFlow API connected":"Connect TextMeFlow"}</strong>
+          <span>{loading?"Checking connection…":status.configured?(status.accountValid?"API key verified. The linked WhatsApp session must remain active.":"Saved key could not be verified. Check your TextMeFlow account."):"Free plan: 50 messages/month · 1 linked device"}</span>
+        </div>
+        <span className="provider-status">{status.configured&&status.accountValid?"Connected":"Not connected"}</span>
+      </div>
+      <div className="whatsapp-provider-steps">
+        <strong>1. Create your free account</strong>
+        <p>Choose the Free plan. It includes 50 messages per month and one linked WhatsApp device, with no credit card required.</p>
+        <a href="https://textmeflow.eu/en/signup" target="_blank" rel="noreferrer">Create free TextMeFlow account <ArrowUpRight size={13}/></a>
+        <strong>2. Link your sender number</strong>
+        <p>In the TextMeFlow portal, open Connect WhatsApp and scan the QR code using the dedicated sender phone:</p>
+        <b>+880 1350588555</b>
+        <p>On the phone: WhatsApp → Linked devices → Link a device. Keep that phone connected to the internet.</p>
+        <strong>3. Copy the API key</strong>
+        <p>Copy the API key from the TextMeFlow portal. Paste it below. TaskXVS will verify it and encrypt it in the database. It will never be displayed again.</p>
+      </div>
+      <form className="whatsapp-provider-form" onSubmit={connect}>
+        <label className="field"><span>TextMeFlow API key {status.configured&&<i>Saved key stays hidden</i>}</span><input type="password" autoComplete="new-password" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder={status.configured?"Enter a new key to replace the saved key":"Paste your TextMeFlow API key"} required={!status.configured}/></label>
+        <label className="field"><span>WhatsApp sender number</span><input type="tel" inputMode="tel" value={senderNumber} onChange={e=>setSenderNumber(e.target.value)} placeholder="+8801350588555"/></label>
+        <p className="form-hint">Use international format. The API key is stored encrypted on the TaskXVS server, not in browser storage.</p>
+        {error&&<div className="form-error">{error}</div>}
+        <div className="modal-actions">
+          {status.configured&&<Button type="button" variant="ghost" onClick={disconnect} disabled={busy}>Disconnect</Button>}
+          {status.configured&&<Button type="button" variant="ghost" onClick={toggle} disabled={busy}>{status.enabled?"Pause notifications":"Enable notifications"}</Button>}
+          <Button disabled={busy||loading||(!apiKey.trim()&&!status.configured)}>{busy?"Verifying…":status.configured?"Replace API key":"Verify & connect"}</Button>
+        </div>
+      </form>
+      {status.configured&&status.accountValid&&status.enabled&&<div className="whatsapp-test-row"><div><strong>Send a test message</strong><span>Uses your saved personal WhatsApp contact and its opt-in setting.</span></div><Button variant="ghost" onClick={test} disabled={busy}><Send size={14}/> Send test</Button></div>}
+      <div className="whatsapp-provider-warning"><ShieldCheck size={17}/><p>Important: TextMeFlow is an independent, unofficial WhatsApp Web-based provider, not Meta's official API. WhatsApp may restrict the sender number. Use the dedicated number, notify only people who opted in, and avoid bulk or unsolicited messages. Free plan quota is 50 messages per month across all recipients.</p></div>
+    </div>
+  </Modal>;
+}
+
 function AccountSettings({account,onClose,onSave}) {
   const [number,setNumber]=useState(account?.whatsapp_number||"");
   const [enabled,setEnabled]=useState(Boolean(account?.whatsapp_notifications_enabled));
@@ -498,6 +580,7 @@ function App() {
   const [completionNote,setCompletionNote]=useState("");
   const [activityItems,setActivityItems]=useState([]);
   const [activityOpen,setActivityOpen]=useState(false);
+  const [whatsAppSettingsOpen,setWhatsAppSettingsOpen]=useState(false);
   const [activitySeenAt,setActivitySeenAt]=useState(()=>{try{return localStorage.getItem("taskxvs_activity_seen")||"";}catch{return "";}});
   const [completionBusy,setCompletionBusy]=useState(false);
   const [toast,setToast]=useState("");
@@ -697,6 +780,7 @@ function App() {
           </div>
         </nav>
         <div className="topbar-right">
+          {isOwner&&<button type="button" className="activity-trigger" aria-label="WhatsApp settings" title="WhatsApp settings" onClick={()=>setWhatsAppSettingsOpen(true)}><MessageCircle size={18}/></button>}
           {isOwner&&<button type="button" className="activity-trigger" aria-label="Workspace activity" title="Workspace activity" onClick={openActivity}><Bell size={18}/>{activityItems.filter(item=>!activitySeenAt||new Date(item.created_at).getTime()>Date.parse(activitySeenAt)).length>0&&<span>{activityItems.filter(item=>!activitySeenAt||new Date(item.created_at).getTime()>Date.parse(activitySeenAt)).length}</span>}</button>}
           {writableBusinesses.length>0&&<Button onClick={openNewTask}><Plus size={16}/> New task</Button>}
         </div>
@@ -767,7 +851,7 @@ function App() {
     {viewingTask&&<TaskDetails task={tasks.find(t=>t.id===viewingTask.id)||viewingTask} business={businesses.find(b=>b.id===viewingTask.business_id)} category={categories.find(c=>c.id===viewingTask.category_id)} today={today} canWrite={canWriteBusiness(viewingTask.business_id)} onClose={()=>setViewingTask(null)} onEdit={()=>{setEditingTask(tasks.find(t=>t.id===viewingTask.id)||viewingTask);setViewingTask(null);setModal("task");}} onComplete={()=>requestStatusChange(tasks.find(t=>t.id===viewingTask.id)||viewingTask,"done")}/>}
     {completingTask&&<CompleteTaskDialog task={completingTask} status={requestedStatus} note={completionNote} setNote={setCompletionNote} onCancel={()=>{setCompletingTask(null);setCompletionNote("");}} onConfirm={confirmCompletion} busy={completionBusy}/>}
     {activityOpen&&isOwner&&<ActivityFeed items={activityItems} onClose={()=>setActivityOpen(false)}/>}
-    {accountOpen&&<AccountSettings account={accountDetails||sessionUser} onClose={()=>setAccountOpen(false)} onSave={saveAccount}/>}
+    {whatsAppSettingsOpen&&isOwner&&<WhatsAppProviderSettings onClose={()=>setWhatsAppSettingsOpen(false)} notify={notify}/>}
     {accountOpen&&<AccountSettings account={accountDetails||sessionUser} onClose={()=>setAccountOpen(false)} onSave={saveAccount}/>}
     {toast&&<div className="toast-message"><Check size={15}/>{toast}</div>}
   </div>;
