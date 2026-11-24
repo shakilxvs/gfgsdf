@@ -64,6 +64,7 @@ const TIME_ZONE_SEARCH_ALIASES = {
   "Europe/Berlin":"Germany Deutschland Berlin",
   "Europe/Istanbul":"Turkey Türkiye Istanbul",
   "Asia/Dubai":"United Arab Emirates UAE Dubai",
+  "Asia/Jerusalem":"Israel Israeli Jerusalem Tel Aviv Tel-Aviv Israel Standard Time Israel Daylight Time",
   "Asia/Dhaka":"Bangladesh Dhaka",
   "Asia/Kolkata":"India Kolkata Delhi Mumbai Indian Standard Time",
   "Asia/Singapore":"Singapore",
