@@ -2,51 +2,44 @@ import express from "express";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import pg from "pg";
-pg.types.setTypeParser(1082, value => value); // Keep PostgreSQL DATE values as YYYY-MM-DD, not JS timestamps.
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+pg.types.setTypeParser(1082, value => value);
 const app = express();
 const PORT = Number(process.env.PORT || 10000);
-const COOKIE = "shlomo_session";
-const SESSION_TTL = 60 * 60 * 24 * 10;
-const USERNAME = process.env.APP_LOGIN_ID || "shlomock";
-const PASSWORD_SALT = process.env.APP_PASSWORD_SALT || "";
-const PASSWORD_HASH = process.env.APP_PASSWORD_HASH || "";
+const COOKIE = "taskxvs_session";
+const SESSION_TTL = 60 * 60 * 24 * 7;
+const OWNER_LOGIN_ID = process.env.OWNER_LOGIN_ID || "shakilxvs";
+const OWNER_PASSWORD_SALT = process.env.OWNER_PASSWORD_SALT || "";
+const OWNER_PASSWORD_HASH = process.env.OWNER_PASSWORD_HASH || "";
 const SESSION_SECRET = process.env.SESSION_SECRET || "";
 const DATABASE_URL = process.env.DATABASE_URL || "";
+const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
+const RESEND_FROM = process.env.RESEND_FROM || "";
 
-if (!DATABASE_URL || !PASSWORD_SALT || !PASSWORD_HASH || !SESSION_SECRET) {
-  console.error("Required server secrets are missing: DATABASE_URL, APP_PASSWORD_SALT, APP_PASSWORD_HASH, SESSION_SECRET.");
+if (!DATABASE_URL || !OWNER_PASSWORD_SALT || !OWNER_PASSWORD_HASH || !SESSION_SECRET) {
+  console.error("Required application secrets are missing.");
 }
-
 const pool = new pg.Pool({
   connectionString: DATABASE_URL,
   ssl: DATABASE_URL.includes("neon.tech") ? { rejectUnauthorized: false } : undefined,
-  max: 8,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000
+  max: 10, idleTimeoutMillis: 30000, connectionTimeoutMillis: 10000
 });
 
 app.set("trust proxy", 1);
 app.disable("x-powered-by");
 app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
-      imgSrc: ["'self'", "data:"],
-      connectSrc: ["'self'"],
-      objectSrc: ["'none'"],
-      frameAncestors: ["'none'"],
-      upgradeInsecureRequests: []
-    }
-  },
+  contentSecurityPolicy: { directives: {
+    defaultSrc: ["'self'"], scriptSrc: ["'self'"],
+    styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+    fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
+    imgSrc: ["'self'", "data:"], connectSrc: ["'self'"],
+    objectSrc: ["'none'"], frameAncestors: ["'none'"], upgradeInsecureRequests: []
+  }},
   crossOriginEmbedderPolicy: false
 }));
 app.use(express.json({ limit: "1mb" }));
@@ -56,17 +49,23 @@ function safeEqual(a, b) {
   const right = Buffer.from(String(b));
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
-function verifyPassword(password) {
-  if (!PASSWORD_SALT || !PASSWORD_HASH) return false;
-  const calculated = crypto.scryptSync(String(password), Buffer.from(PASSWORD_SALT, "hex"), 64);
-  return safeEqual(calculated.toString("hex"), PASSWORD_HASH);
+function derivePassword(password, saltHex) {
+  return crypto.scryptSync(String(password), Buffer.from(saltHex, "hex"), 64).toString("hex");
+}
+function passwordMatches(password, salt, hash) {
+  try { return safeEqual(derivePassword(password, salt), hash); } catch { return false; }
+}
+function newPasswordRecord(password) {
+  const salt = crypto.randomBytes(32).toString("hex");
+  return { salt, hash: derivePassword(password, salt) };
 }
 function sign(value) {
   return crypto.createHmac("sha256", SESSION_SECRET).update(value).digest("base64url");
 }
-function makeSession() {
+function makeSession(auth) {
   const body = Buffer.from(JSON.stringify({
-    sub: USERNAME,
+    kind: auth.kind, uid: auth.uid || null, username: auth.username,
+    tokenVersion: auth.tokenVersion || 1,
     exp: Math.floor(Date.now() / 1000) + SESSION_TTL,
     nonce: crypto.randomBytes(18).toString("base64url")
   })).toString("base64url");
@@ -77,252 +76,445 @@ function readCookie(req) {
   const item = header.split(";").map(s => s.trim()).find(s => s.startsWith(COOKIE + "="));
   return item ? decodeURIComponent(item.slice(COOKIE.length + 1)) : "";
 }
-function validSession(req) {
+async function authenticate(req) {
   try {
     const [body, signature] = readCookie(req).split(".");
-    if (!body || !signature) return false;
-    if (!safeEqual(signature, sign(body))) return false;
+    if (!body || !signature || !safeEqual(signature, sign(body))) return null;
     const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
-    return payload.sub === USERNAME && payload.exp > Math.floor(Date.now() / 1000);
-  } catch { return false; }
+    if (!payload.exp || payload.exp <= Math.floor(Date.now() / 1000)) return null;
+    if (payload.kind === "owner" && payload.username === OWNER_LOGIN_ID) {
+      return { kind: "owner", role: "owner", username: OWNER_LOGIN_ID, displayName: "Shakil" };
+    }
+    if (payload.kind !== "member" || !payload.uid) return null;
+    const result = await pool.query(
+      "SELECT id, username, display_name, email, active, token_version FROM users WHERE id=$1",
+      [payload.uid]
+    );
+    const user = result.rows[0];
+    if (!user || !user.active || user.token_version !== payload.tokenVersion) return null;
+    return { kind: "member", role: "member", id: user.id, uid: user.id,
+      username: user.username, displayName: user.display_name, email: user.email };
+  } catch { return null; }
 }
 function setSessionCookie(res, token) {
   res.cookie(COOKIE, token, {
-    httpOnly: true, secure: true, sameSite: "lax",
-    path: "/", maxAge: SESSION_TTL * 1000
+    httpOnly: true, secure: true, sameSite: "lax", path: "/",
+    maxAge: SESSION_TTL * 1000
   });
 }
 function clearSessionCookie(res) {
   res.clearCookie(COOKIE, { httpOnly: true, secure: true, sameSite: "lax", path: "/" });
 }
-function requireAuth(req, res, next) {
-  if (!validSession(req)) return res.status(401).json({ error: "Your session has expired. Please sign in again." });
+async function requireAuth(req, res, next) {
+  const auth = await authenticate(req);
+  if (!auth) return res.status(401).json({ error: "Your session has expired. Please sign in again." });
+  req.auth = auth;
   next();
 }
-function requireSameOrigin(req, res, next) {
+function requireOwner(req, res, next) {
+  if (req.auth?.role !== "owner") return res.status(403).json({ error: "Only the workspace owner can do that." });
+  next();
+}
+async function assignedPermission(userId, businessId) {
+  const result = await pool.query(
+    "SELECT permission FROM business_assignments WHERE user_id=$1 AND business_id=$2",
+    [userId, businessId]
+  );
+  return result.rows[0]?.permission || null;
+}
+async function requireBusinessAccess(req, res, businessId, write=false) {
+  if (req.auth.role === "owner") return true;
+  const permission = await assignedPermission(req.auth.id, businessId);
+  if (!permission || (write && permission !== "write")) {
+    res.status(403).json({ error: write ? "You have read-only access to this business." : "This business is not assigned to your account." });
+    return false;
+  }
+  return true;
+}
+async function requireSameOrigin(req, res, next) {
   if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return next();
   const origin = req.get("origin");
   const host = req.get("host");
   if (origin) {
-    try {
-      const u = new URL(origin);
-      if (u.host !== host) return res.status(403).json({ error: "Request origin rejected." });
-    } catch { return res.status(403).json({ error: "Request origin rejected." }); }
+    try { if (new URL(origin).host !== host) return res.status(403).json({ error: "Request origin rejected." }); }
+    catch { return res.status(403).json({ error: "Request origin rejected." }); }
   }
   next();
 }
 app.use("/api", requireSameOrigin);
 
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, limit: 12, standardHeaders: "draft-7", legacyHeaders: false,
-  message: { error: "Too many sign-in attempts. Please wait 15 minutes and try again." }
+  windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: "draft-7", legacyHeaders: false,
+  message: { error: "Too many sign-in attempts. Please wait before trying again." }
 });
-
-app.post("/api/auth/login", loginLimiter, (req, res) => {
-  const username = String(req.body?.username || "").trim();
-  const password = String(req.body?.password || "");
-  if (!safeEqual(username, USERNAME) || !verifyPassword(password)) {
-    return res.status(401).json({ error: "That login ID and password don't match." });
-  }
-  setSessionCookie(res, makeSession());
-  res.set("Cache-Control", "no-store").json({ ok: true });
+app.post("/api/auth/login", loginLimiter, async (req, res, next) => {
+  try {
+    const username = String(req.body?.username || "").trim();
+    const password = String(req.body?.password || "");
+    if (safeEqual(username.toLowerCase(), OWNER_LOGIN_ID.toLowerCase()) &&
+        passwordMatches(password, OWNER_PASSWORD_SALT, OWNER_PASSWORD_HASH)) {
+      setSessionCookie(res, makeSession({ kind: "owner", username: OWNER_LOGIN_ID }));
+      return res.set("Cache-Control", "no-store").json({ ok: true });
+    }
+    const result = await pool.query(
+      "SELECT id, username, display_name, email, password_salt, password_hash, active, token_version FROM users WHERE lower(username)=lower($1)",
+      [username]
+    );
+    const user = result.rows[0];
+    if (!user || !user.active || !passwordMatches(password, user.password_salt, user.password_hash)) {
+      return res.status(401).json({ error: "That username and password don't match." });
+    }
+    setSessionCookie(res, makeSession({ kind: "member", uid: user.id, username: user.username, tokenVersion: user.token_version }));
+    res.set("Cache-Control", "no-store").json({ ok: true });
+  } catch (e) { next(e); }
 });
-app.get("/api/auth/session", (req, res) => {
-  res.set("Cache-Control", "no-store");
-  res.json({ authenticated: validSession(req), username: validSession(req) ? USERNAME : null });
+app.get("/api/auth/session", async (req, res) => {
+  const auth = await authenticate(req);
+  res.set("Cache-Control", "no-store").json({
+    authenticated: Boolean(auth),
+    user: auth ? { id: auth.id || null, username: auth.username, displayName: auth.displayName, role: auth.role } : null
+  });
 });
-app.post("/api/auth/logout", (req, res) => {
+app.post("/api/auth/logout", (_req, res) => {
   clearSessionCookie(res);
   res.set("Cache-Control", "no-store").json({ ok: true });
 });
 
+function validEmailList(raw) {
+  if (!raw) return true;
+  const emails = String(raw).split(/[;,\s]+/).filter(Boolean);
+  return emails.length <= 10 && emails.every(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+}
+async function sendBusinessNotification(business, event, task) {
+  if (!business?.email_notifications || !business.notification_email || !RESEND_API_KEY || !RESEND_FROM) return;
+  const recipients = business.notification_email.split(/[;,\s]+/).filter(Boolean);
+  if (!recipients.length) return;
+  const subject = `[${business.name}] ${event}: ${task.title}`;
+  const plain = [
+    `Business: ${business.name}`, `Activity: ${event}`, `Task: ${task.title}`,
+    task.deadline ? `Deadline: ${task.deadline}` : "Deadline: Not set",
+    `Status: ${task.status}`, task.description || ""
+  ].filter(Boolean).join("\n");
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: RESEND_FROM, to: recipients, subject, text: plain })
+    });
+    if (!response.ok) {
+      const message = await response.text();
+      console.error("Task notification email failed:", response.status, message.slice(0, 500));
+    }
+  } catch (error) { console.error("Task notification email error:", error.message); }
+}
+async function businessRow(businessId) {
+  const result = await pool.query("SELECT * FROM businesses WHERE id=$1", [businessId]);
+  return result.rows[0] || null;
+}
 async function initDatabase() {
-  if (process.env.RUN_DB_SETUP === "true") {
-    const client = await pool.connect();
-    try {
-      const schema = fs.readFileSync(path.join(__dirname, "db/schema.sql"), "utf8");
-      await client.query(schema);
-    } finally { client.release(); }
-  } else {
-    await pool.query("SELECT 1");
-  }
+  await pool.query("SELECT 1");
 }
 
-app.get("/api/bootstrap", requireAuth, async (_req, res, next) => {
+app.get("/api/bootstrap", requireAuth, async (req, res, next) => {
   try {
-    const [businesses, categories, tasks] = await Promise.all([
-      pool.query("SELECT * FROM businesses ORDER BY position, lower(name)"),
-      pool.query("SELECT * FROM categories ORDER BY position, lower(name)"),
-      pool.query("SELECT * FROM tasks ORDER BY updated_at DESC")
-    ]);
+    let businessRows;
+    if (req.auth.role === "owner") {
+      const r = await pool.query("SELECT * FROM businesses WHERE archived=false ORDER BY position, lower(name)");
+      businessRows = r.rows;
+    } else {
+      const r = await pool.query(
+        `SELECT b.*, a.permission FROM businesses b
+         JOIN business_assignments a ON a.business_id=b.id
+         WHERE a.user_id=$1 AND b.archived=false ORDER BY b.position, lower(b.name)`,
+        [req.auth.id]
+      );
+      businessRows = r.rows;
+    }
+    const ids = businessRows.map(b => b.id);
+    const [categories, tasks] = ids.length ? await Promise.all([
+      pool.query("SELECT * FROM categories WHERE business_id=ANY($1::uuid[]) ORDER BY position, lower(name)", [ids]),
+      pool.query("SELECT * FROM tasks WHERE business_id=ANY($1::uuid[]) ORDER BY updated_at DESC", [ids])
+    ]) : [{ rows: [] }, { rows: [] }];
     res.set("Cache-Control", "no-store").json({
-      businesses: businesses.rows, categories: categories.rows, tasks: tasks.rows
+      businesses: businessRows, categories: categories.rows, tasks: tasks.rows,
+      user: req.auth,
+      emailConfigured: Boolean(RESEND_API_KEY && RESEND_FROM)
     });
   } catch (e) { next(e); }
 });
 
-app.post("/api/businesses", requireAuth, async (req, res, next) => {
+/* Owner-managed users and per-business permissions. */
+app.get("/api/admin/users", requireAuth, requireOwner, async (_req, res, next) => {
   try {
-    const name = String(req.body?.name || "").trim();
-    if (!name || name.length > 60) return res.status(400).json({ error: "Business name must be between 1 and 60 characters." });
-    const result = await pool.query(
-      "INSERT INTO businesses (name, position) VALUES ($1, COALESCE((SELECT max(position)+1 FROM businesses),1)) RETURNING *",
-      [name]
-    );
-    res.status(201).json(result.rows[0]);
-  } catch (e) {
-    if (e.code === "23505") return res.status(409).json({ error: "A business with that name already exists." });
-    next(e);
-  }
-});
-app.patch("/api/businesses/:id", requireAuth, async (req, res, next) => {
-  try {
-    const name = String(req.body?.name || "").trim();
-    const archived = typeof req.body?.archived === "boolean" ? req.body.archived : null;
-    if (req.body?.name !== undefined && (!name || name.length > 60)) return res.status(400).json({ error: "Business name must be between 1 and 60 characters." });
-    const result = await pool.query(
-      "UPDATE businesses SET name=COALESCE($2,name), archived=COALESCE($3,archived) WHERE id=$1 RETURNING *",
-      [req.params.id, req.body?.name === undefined ? null : name, archived]
-    );
-    if (!result.rowCount) return res.status(404).json({ error: "Business not found." });
-    res.json(result.rows[0]);
-  } catch (e) {
-    if (e.code === "23505") return res.status(409).json({ error: "A business with that name already exists." });
-    next(e);
-  }
-});
-app.delete("/api/businesses/:id", requireAuth, async (req, res, next) => {
-  try {
-    const result = await pool.query("DELETE FROM businesses WHERE id=$1 RETURNING id", [req.params.id]);
-    if (!result.rowCount) return res.status(404).json({ error: "Business not found." });
-    res.json({ ok: true });
+    const result = await pool.query(`
+      SELECT u.id,u.username,u.display_name,u.email,u.active,u.created_at,
+        COALESCE(json_agg(json_build_object('business_id',a.business_id,'permission',a.permission))
+          FILTER (WHERE a.business_id IS NOT NULL),'[]'::json) AS assignments
+      FROM users u LEFT JOIN business_assignments a ON a.user_id=u.id
+      GROUP BY u.id ORDER BY lower(u.username)`);
+    res.set("Cache-Control", "no-store").json({ users: result.rows });
   } catch (e) { next(e); }
 });
-
-app.post("/api/categories", requireAuth, async (req, res, next) => {
+app.post("/api/admin/users", requireAuth, requireOwner, async (req, res, next) => {
+  const client = await pool.connect();
   try {
-    const businessId = String(req.body?.business_id || "");
-    const name = String(req.body?.name || "").trim();
-    const icon = String(req.body?.icon || "Tag").slice(0, 40);
-    const color = String(req.body?.color || "#668575").slice(0, 30);
-    if (!businessId || !name || name.length > 40) return res.status(400).json({ error: "Choose a business and enter a category name (1–40 characters)." });
-    const result = await pool.query(
+    const username = String(req.body?.username || "").trim();
+    const displayName = String(req.body?.display_name || username).trim();
+    const email = String(req.body?.email || "").trim() || null;
+    const password = String(req.body?.password || "");
+    const assignments = Array.isArray(req.body?.assignments) ? req.body.assignments : [];
+    if (!/^[a-zA-Z0-9._-]{3,40}$/.test(username)) return res.status(400).json({ error: "Username must be 3–40 characters using letters, numbers, dots, underscores or hyphens." });
+    if (password.length < 12) return res.status(400).json({ error: "Use a password with at least 12 characters." });
+    if (!displayName || displayName.length > 80) return res.status(400).json({ error: "Enter a display name." });
+    if (email && !validEmailList(email)) return res.status(400).json({ error: "Enter a valid email address." });
+    const credentials = newPasswordRecord(password);
+    await client.query("BEGIN");
+    const created = await client.query(
+      "INSERT INTO users (username,display_name,email,password_salt,password_hash) VALUES ($1,$2,$3,$4,$5) RETURNING id,username,display_name,email,active",
+      [username,displayName,email,credentials.salt,credentials.hash]
+    );
+    for (const assignment of assignments) {
+      if (!["read","write"].includes(assignment.permission)) throw Object.assign(new Error("Invalid business permission."),{status:400});
+      await client.query(
+        "INSERT INTO business_assignments (user_id,business_id,permission) VALUES ($1,$2,$3)",
+        [created.rows[0].id,assignment.business_id,assignment.permission]
+      );
+    }
+    await client.query("COMMIT");
+    res.status(201).json(created.rows[0]);
+  } catch (e) {
+    await client.query("ROLLBACK");
+    if (e.code === "23505") return res.status(409).json({ error: "That username is already in use." });
+    if (e.code === "23503") return res.status(400).json({ error: "One of the selected businesses does not exist." });
+    next(e);
+  } finally { client.release(); }
+});
+app.patch("/api/admin/users/:id", requireAuth, requireOwner, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const existing = await client.query("SELECT id FROM users WHERE id=$1", [req.params.id]);
+    if (!existing.rowCount) { await client.query("ROLLBACK"); return res.status(404).json({ error: "User not found." }); }
+    if (req.body?.display_name !== undefined || req.body?.email !== undefined || req.body?.active !== undefined) {
+      await client.query(
+        `UPDATE users SET
+          display_name=COALESCE($2,display_name),
+          email=CASE WHEN $3::boolean THEN $4 ELSE email END,
+          active=COALESCE($5,active),
+          token_version=CASE WHEN $5=false THEN token_version+1 ELSE token_version END
+         WHERE id=$1`,
+        [req.params.id,
+          req.body.display_name === undefined ? null : String(req.body.display_name).trim(),
+          req.body.email !== undefined,
+          String(req.body.email || "").trim() || null,
+          typeof req.body.active === "boolean" ? req.body.active : null]
+      );
+    }
+    if (req.body?.password) {
+      const password = String(req.body.password);
+      if (password.length < 12) throw Object.assign(new Error("Use a password with at least 12 characters."),{status:400});
+      const credentials = newPasswordRecord(password);
+      await client.query("UPDATE users SET password_salt=$2,password_hash=$3,token_version=token_version+1 WHERE id=$1",
+        [req.params.id,credentials.salt,credentials.hash]);
+    }
+    if (Array.isArray(req.body?.assignments)) {
+      await client.query("DELETE FROM business_assignments WHERE user_id=$1",[req.params.id]);
+      for (const assignment of req.body.assignments) {
+        if (!["read","write"].includes(assignment.permission)) throw Object.assign(new Error("Invalid business permission."),{status:400});
+        await client.query("INSERT INTO business_assignments (user_id,business_id,permission) VALUES ($1,$2,$3)",
+          [req.params.id,assignment.business_id,assignment.permission]);
+      }
+    }
+    const result=await client.query("SELECT id,username,display_name,email,active FROM users WHERE id=$1",[req.params.id]);
+    await client.query("COMMIT");
+    res.json(result.rows[0]);
+  } catch(e) {
+    await client.query("ROLLBACK");
+    if(e.code==="23503")return res.status(400).json({error:"One of the selected businesses does not exist."});
+    next(e);
+  } finally { client.release(); }
+});
+app.delete("/api/admin/users/:id", requireAuth, requireOwner, async (req,res,next) => {
+  try {
+    const result=await pool.query("DELETE FROM users WHERE id=$1 RETURNING id",[req.params.id]);
+    if(!result.rowCount)return res.status(404).json({error:"User not found."});
+    res.json({ok:true});
+  } catch(e){next(e);}
+});
+
+/* Business administration is owner-only. */
+app.post("/api/businesses", requireAuth, requireOwner, async (req, res, next) => {
+  try {
+    const name=String(req.body?.name||"").trim();
+    const email=String(req.body?.notification_email||"").trim();
+    const emailNotifications=Boolean(req.body?.email_notifications);
+    if(!name||name.length>60)return res.status(400).json({error:"Business name must be between 1 and 60 characters."});
+    if(!validEmailList(email))return res.status(400).json({error:"Enter up to 10 valid notification email addresses separated by commas."});
+    const result=await pool.query(
+      "INSERT INTO businesses (name,notification_email,email_notifications,position) VALUES ($1,$2,$3,COALESCE((SELECT max(position)+1 FROM businesses),1)) RETURNING *",
+      [name,email||null,emailNotifications]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch(e){
+    if(e.code==="23505")return res.status(409).json({error:"A business with that name already exists."});
+    next(e);
+  }
+});
+app.patch("/api/businesses/:id", requireAuth, requireOwner, async (req,res,next)=>{
+  try{
+    const name=req.body?.name===undefined?null:String(req.body.name).trim();
+    const email=req.body?.notification_email===undefined?null:(String(req.body.notification_email||"").trim()||null);
+    const enabled=typeof req.body?.email_notifications==="boolean"?req.body.email_notifications:null;
+    const archived=typeof req.body?.archived==="boolean"?req.body.archived:null;
+    if(name!==null&&(!name||name.length>60))return res.status(400).json({error:"Business name must be between 1 and 60 characters."});
+    if(email!==null&&!validEmailList(email))return res.status(400).json({error:"Enter up to 10 valid notification email addresses."});
+    const result=await pool.query(
+      `UPDATE businesses SET name=COALESCE($2,name),
+       notification_email=CASE WHEN $3::boolean THEN $4 ELSE notification_email END,
+       email_notifications=COALESCE($5,email_notifications),
+       archived=COALESCE($6,archived)
+       WHERE id=$1 RETURNING *`,
+      [req.params.id,name,req.body?.notification_email!==undefined,email,enabled,archived]
+    );
+    if(!result.rowCount)return res.status(404).json({error:"Business not found."});
+    res.json(result.rows[0]);
+  }catch(e){
+    if(e.code==="23505")return res.status(409).json({error:"A business with that name already exists."});
+    next(e);
+  }
+});
+app.delete("/api/businesses/:id", requireAuth, requireOwner, async (req,res,next)=>{
+  try{
+    const result=await pool.query("DELETE FROM businesses WHERE id=$1 RETURNING id",[req.params.id]);
+    if(!result.rowCount)return res.status(404).json({error:"Business not found."});
+    res.json({ok:true});
+  }catch(e){next(e);}
+});
+
+app.post("/api/categories", requireAuth, async (req,res,next)=>{
+  try{
+    const businessId=String(req.body?.business_id||"");
+    if(!await requireBusinessAccess(req,res,businessId,true))return;
+    const name=String(req.body?.name||"").trim();
+    const icon=String(req.body?.icon||"tag").slice(0,50);
+    const color=String(req.body?.color||"#d97737").slice(0,30);
+    if(!businessId||!name||name.length>50)return res.status(400).json({error:"Choose a business and enter a category name (1–50 characters)."});
+    const result=await pool.query(
       "INSERT INTO categories (business_id,name,icon,color,position) VALUES ($1,$2,$3,$4,COALESCE((SELECT max(position)+1 FROM categories WHERE business_id=$1),1)) RETURNING *",
       [businessId,name,icon,color]
     );
     res.status(201).json(result.rows[0]);
-  } catch (e) {
-    if (e.code === "23505") return res.status(409).json({ error: "That category already exists in this business." });
-    if (e.code === "23503") return res.status(400).json({ error: "The selected business does not exist." });
+  }catch(e){
+    if(e.code==="23505")return res.status(409).json({error:"That category already exists in this business."});
+    if(e.code==="23503")return res.status(400).json({error:"The selected business does not exist."});
     next(e);
   }
 });
-app.patch("/api/categories/:id", requireAuth, async (req, res, next) => {
-  try {
-    const name = req.body?.name === undefined ? null : String(req.body.name).trim();
-    if (name !== null && (!name || name.length > 40)) return res.status(400).json({ error: "Category name must be between 1 and 40 characters." });
-    const result = await pool.query(
-      "UPDATE categories SET name=COALESCE($2,name), icon=COALESCE($3,icon), color=COALESCE($4,color) WHERE id=$1 RETURNING *",
-      [req.params.id,name,req.body?.icon ?? null,req.body?.color ?? null]
+app.patch("/api/categories/:id",requireAuth,async(req,res,next)=>{
+  try{
+    const current=await pool.query("SELECT business_id FROM categories WHERE id=$1",[req.params.id]);
+    if(!current.rowCount)return res.status(404).json({error:"Category not found."});
+    if(!await requireBusinessAccess(req,res,current.rows[0].business_id,true))return;
+    const name=req.body?.name===undefined?null:String(req.body.name).trim();
+    if(name!==null&&(!name||name.length>50))return res.status(400).json({error:"Category name must be between 1 and 50 characters."});
+    const result=await pool.query(
+      "UPDATE categories SET name=COALESCE($2,name),icon=COALESCE($3,icon),color=COALESCE($4,color) WHERE id=$1 RETURNING *",
+      [req.params.id,name,req.body?.icon??null,req.body?.color??null]
     );
-    if (!result.rowCount) return res.status(404).json({ error: "Category not found." });
     res.json(result.rows[0]);
-  } catch (e) {
-    if (e.code === "23505") return res.status(409).json({ error: "That category already exists in this business." });
-    next(e);
-  }
+  }catch(e){next(e);}
 });
-app.delete("/api/categories/:id", requireAuth, async (req, res, next) => {
-  try {
-    const result = await pool.query("DELETE FROM categories WHERE id=$1 RETURNING id", [req.params.id]);
-    if (!result.rowCount) return res.status(404).json({ error: "Category not found." });
-    res.json({ ok: true });
-  } catch (e) { next(e); }
+app.delete("/api/categories/:id",requireAuth,async(req,res,next)=>{
+  try{
+    const current=await pool.query("SELECT business_id FROM categories WHERE id=$1",[req.params.id]);
+    if(!current.rowCount)return res.status(404).json({error:"Category not found."});
+    if(!await requireBusinessAccess(req,res,current.rows[0].business_id,true))return;
+    await pool.query("DELETE FROM categories WHERE id=$1",[req.params.id]);
+    res.json({ok:true});
+  }catch(e){next(e);}
 });
 
-const taskFields = ["business_id","category_id","title","description","notes","status","priority","created_date","start_date","deadline"];
 function normalizeTask(body) {
-  const v = {
-    business_id: String(body.business_id || ""),
-    category_id: body.category_id || null,
-    title: String(body.title || "").trim(),
-    description: String(body.description || ""),
-    notes: String(body.notes || ""),
-    status: body.status || "todo",
-    priority: body.priority || "normal",
-    created_date: body.created_date || new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Dhaka"}),
-    start_date: body.start_date || null,
-    deadline: body.deadline || null
+  const v={
+    business_id:String(body.business_id||""),category_id:body.category_id||null,
+    title:String(body.title||"").trim(),description:String(body.description||""),
+    notes:String(body.notes||""),status:body.status||"todo",priority:body.priority||"normal",
+    created_date:body.created_date||new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Dhaka"}),
+    start_date:body.start_date||null,deadline:body.deadline||null
   };
-  if (!v.business_id) throw Object.assign(new Error("Choose a business."),{status:400});
-  if (!v.title || v.title.length > 200) throw Object.assign(new Error("Task title must be between 1 and 200 characters."),{status:400});
-  if (v.description.length > 5000 || v.notes.length > 5000) throw Object.assign(new Error("Description and notes must be under 5,000 characters."),{status:400});
-  if (!["todo","in_progress","done"].includes(v.status)) throw Object.assign(new Error("Invalid task status."),{status:400});
-  if (!["low","normal","high","urgent"].includes(v.priority)) throw Object.assign(new Error("Invalid task priority."),{status:400});
-  if (v.start_date && v.deadline && v.deadline < v.start_date) throw Object.assign(new Error("Deadline cannot be before the start date."),{status:400});
+  if(!v.business_id)throw Object.assign(new Error("Choose a business."),{status:400});
+  if(!v.title||v.title.length>200)throw Object.assign(new Error("Task title must be between 1 and 200 characters."),{status:400});
+  if(v.description.length>5000||v.notes.length>5000)throw Object.assign(new Error("Description and notes must be under 5,000 characters."),{status:400});
+  if(!["todo","in_progress","done"].includes(v.status))throw Object.assign(new Error("Invalid task status."),{status:400});
+  if(!["low","normal","high","urgent"].includes(v.priority))throw Object.assign(new Error("Invalid task priority."),{status:400});
+  if(v.start_date&&v.deadline&&v.deadline<v.start_date)throw Object.assign(new Error("Deadline cannot be before the start date."),{status:400});
   return v;
 }
-app.post("/api/tasks", requireAuth, async (req, res, next) => {
-  try {
-    const v = normalizeTask(req.body || {});
-    const result = await pool.query(
+app.post("/api/tasks",requireAuth,async(req,res,next)=>{
+  try{
+    const v=normalizeTask(req.body||{});
+    if(!await requireBusinessAccess(req,res,v.business_id,true))return;
+    const result=await pool.query(
       `INSERT INTO tasks (business_id,category_id,title,description,notes,status,priority,created_date,start_date,deadline,completed_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,CASE WHEN $6='done' THEN now() ELSE NULL END) RETURNING *`,
       [v.business_id,v.category_id,v.title,v.description,v.notes,v.status,v.priority,v.created_date,v.start_date,v.deadline]
     );
     res.status(201).json(result.rows[0]);
-  } catch (e) {
-    if (e.code === "23503") return res.status(400).json({ error: "That category does not belong to the selected business." });
-    if (e.code === "23514") return res.status(400).json({ error: "Task details failed validation." });
+    const business=await businessRow(v.business_id);
+    sendBusinessNotification(business,"New task",result.rows[0]);
+  }catch(e){
+    if(e.code==="23503")return res.status(400).json({error:"That category does not belong to the selected business."});
+    if(e.code==="23514")return res.status(400).json({error:"Task details failed validation."});
     next(e);
   }
 });
-app.patch("/api/tasks/:id", requireAuth, async (req, res, next) => {
-  try {
-    const v = normalizeTask(req.body || {});
-    const result = await pool.query(
+app.patch("/api/tasks/:id",requireAuth,async(req,res,next)=>{
+  try{
+    const existing=await pool.query("SELECT business_id FROM tasks WHERE id=$1",[req.params.id]);
+    if(!existing.rowCount)return res.status(404).json({error:"Task not found."});
+    if(!await requireBusinessAccess(req,res,existing.rows[0].business_id,true))return;
+    const v=normalizeTask(req.body||{});
+    if(!await requireBusinessAccess(req,res,v.business_id,true))return;
+    const result=await pool.query(
       `UPDATE tasks SET business_id=$2,category_id=$3,title=$4,description=$5,notes=$6,status=$7,priority=$8,created_date=$9,start_date=$10,deadline=$11,
-       completed_at=CASE WHEN $7='done' THEN COALESCE(completed_at,now()) ELSE NULL END
-       WHERE id=$1 RETURNING *`,
+       completed_at=CASE WHEN $7='done' THEN COALESCE(completed_at,now()) ELSE NULL END WHERE id=$1 RETURNING *`,
       [req.params.id,v.business_id,v.category_id,v.title,v.description,v.notes,v.status,v.priority,v.created_date,v.start_date,v.deadline]
     );
-    if (!result.rowCount) return res.status(404).json({ error: "Task not found." });
     res.json(result.rows[0]);
-  } catch (e) {
-    if (e.code === "23503") return res.status(400).json({ error: "That category does not belong to the selected business." });
-    if (e.code === "23514") return res.status(400).json({ error: "Task details failed validation." });
+    const business=await businessRow(v.business_id);
+    sendBusinessNotification(business,"Task updated",result.rows[0]);
+  }catch(e){
+    if(e.code==="23503")return res.status(400).json({error:"That category does not belong to the selected business."});
+    if(e.code==="23514")return res.status(400).json({error:"Task details failed validation."});
     next(e);
   }
 });
-app.delete("/api/tasks/:id", requireAuth, async (req, res, next) => {
-  try {
-    const result = await pool.query("DELETE FROM tasks WHERE id=$1 RETURNING id", [req.params.id]);
-    if (!result.rowCount) return res.status(404).json({ error: "Task not found." });
-    res.json({ ok: true });
-  } catch (e) { next(e); }
+app.delete("/api/tasks/:id",requireAuth,async(req,res,next)=>{
+  try{
+    const current=await pool.query("SELECT * FROM tasks WHERE id=$1",[req.params.id]);
+    if(!current.rowCount)return res.status(404).json({error:"Task not found."});
+    if(!await requireBusinessAccess(req,res,current.rows[0].business_id,true))return;
+    const business=await businessRow(current.rows[0].business_id);
+    await pool.query("DELETE FROM tasks WHERE id=$1",[req.params.id]);
+    sendBusinessNotification(business,"Task deleted",current.rows[0]);
+    res.json({ok:true});
+  }catch(e){next(e);}
 });
 
-app.get("/api/health", async (_req, res) => {
-  try { await pool.query("SELECT 1"); res.json({ ok: true, service: "shlomo-task-manager" }); }
-  catch { res.status(503).json({ ok: false }); }
+app.get("/api/health",async(_req,res)=>{
+  try{await pool.query("SELECT 1");res.json({ok:true,service:"taskxvs",emailReady:Boolean(RESEND_API_KEY&&RESEND_FROM)});}
+  catch{res.status(503).json({ok:false});}
 });
-
-app.use(express.static(path.join(__dirname, "dist"), { index: false, maxAge: "1h" }));
-app.get("*", (_req, res) => {
-  const index = path.join(__dirname, "dist", "index.html");
-  if (fs.existsSync(index)) return res.sendFile(index);
+app.use(express.static(path.join(__dirname,"dist"),{index:false,maxAge:"1h"}));
+app.get("*",(_req,res)=>{
+  const index=path.join(__dirname,"dist","index.html");
+  if(fs.existsSync(index))return res.sendFile(index);
   res.status(503).send("Application is building. Please retry shortly.");
 });
-app.use((err, _req, res, _next) => {
+app.use((err,_req,res,_next)=>{
   console.error(err);
-  res.status(err.status || 500).json({ error: err.status ? err.message : "Something went wrong. Please try again." });
+  res.status(err.status||500).json({error:err.status?err.message:"Something went wrong. Please try again."});
 });
-
-initDatabase().then(() => {
-  app.listen(PORT, "0.0.0.0", () => console.log(`Shlomo Tasks listening on ${PORT}`));
-}).catch(error => {
-  console.error("Database initialization failed:", error);
-  process.exit(1);
-});
-
-process.on("SIGTERM", async () => { await pool.end(); process.exit(0); });
+initDatabase().then(()=>app.listen(PORT,"0.0.0.0",()=>console.log(`TaskXVS listening on ${PORT}`)))
+  .catch(error=>{console.error("Database initialization failed:",error);process.exit(1);});
+process.on("SIGTERM",async()=>{await pool.end();process.exit(0);});
