@@ -412,9 +412,22 @@ function WorkspaceSettings({onClose,notify,emailConfigured}) {
     }catch(err){setError(err.message);}
     finally{setBusy(false);}
   }
+  async function reconnect(){
+    const confirmed=window.confirm("This clears only the saved WhatsApp linked-device login. Your tasks, businesses and notification queue will remain untouched. You will need to start the GitHub worker again and scan a fresh QR code. Continue?");
+    if(!confirmed)return;
+    setBusy(true);setError("");
+    try{
+      const result=await api("/api/admin/whatsapp/reconnect",{method:"POST"});
+      setStatus(result);
+      notify(result.message||"WhatsApp login cleared. Start the worker to generate a new QR code.");
+    }catch(err){setError(err.message);}
+    finally{setBusy(false);}
+  }
   const connected=status.status==="connected";
   const pairing=status.status==="qr"&&Boolean(status.qr_data_url);
-  const paused=Boolean(status.last_error);
+  const reconnectRequired=Boolean(status.reconnect_required);
+  const reconnectReady=Boolean(status.reconnect_ready);
+  const paused=Boolean(status.last_error)&&!reconnectReady;
   return <Modal title="Settings" subtitle="Manage workspace connections and notification services." onClose={onClose} wide>
     <div className="workspace-settings">
       <div className="settings-section-heading"><strong>Connections</strong><span>Workspace integrations are visible to the owner only.</span></div>
@@ -424,16 +437,21 @@ function WorkspaceSettings({onClose,notify,emailConfigured}) {
       <div className={connected?"whatsapp-cloud-card connected":"whatsapp-cloud-card pending"}>
         <div className="whatsapp-cloud-symbol"><MessageCircle size={21}/></div>
         <div className="whatsapp-cloud-copy">
-          <strong>{connected?"WhatsApp sender connected":pairing?"Scan to connect WhatsApp":paused?"Connection paused":"Cloud sender waiting"}</strong>
-          <span>{loading?"Checking cloud worker…":connected?("Connected "+(status.phone_number||"sender number")+". Messages are sent by the scheduled cloud worker."):status.last_error||(pairing?"A QR code is ready to scan.":"The free cloud worker will display a QR code when its next run starts.")}</span>
+          <strong>{connected?"WhatsApp sender connected":pairing?"Scan to connect WhatsApp":reconnectReady?"Ready for a new WhatsApp login":reconnectRequired?"WhatsApp login needs attention":paused?"Connection paused":"Cloud sender waiting"}</strong>
+          <span>{loading?"Checking cloud worker…":connected?("Connected "+(status.phone_number||"sender number")+". Messages are sent by the scheduled cloud worker."):reconnectReady?(status.last_error||"The previous login was cleared. Start the worker workflow to generate a fresh QR code."):reconnectRequired?(status.last_error||"The linked-device session ended. Generate a fresh QR code to sign in again."):status.last_error||(pairing?"A QR code is ready to scan.":"The free cloud worker will display a QR code when its next run starts.")}</span>
         </div>
-        <span className="provider-status">{connected?"Connected":pairing?"Pair device":paused?"Paused":"Waiting"}</span>
+        <span className="provider-status">{connected?"Connected":pairing?"Pair device":reconnectReady?"Start worker":reconnectRequired?"Login needed":paused?"Paused":"Waiting"}</span>
       </div>
       {pairing&&<div className="whatsapp-cloud-qr">
         <strong>Link your dedicated sender once</strong>
         <p>Open WhatsApp on the sender phone, go to Linked devices, choose Link a device, then scan this QR code.</p>
         <img src={status.qr_data_url} alt="WhatsApp device pairing QR code"/>
         <small>The phone is only needed for pairing. It does not need to stay online after linking.</small>
+      </div>}
+      {reconnectReady&&<div className="whatsapp-cloud-steps whatsapp-reconnect-ready">
+        <strong>Your old linked-device session has been cleared</strong>
+        <p>Start the worker below. TaskXVS will display a fresh QR code here automatically. Keep the GitHub Actions run active while scanning it.</p>
+        <a href="https://github.com/shakilxvs/gfgsdf/actions/workflows/taskxvs-whatsapp-worker.yml" target="_blank" rel="noreferrer">Open TaskXVS WhatsApp worker workflow <ArrowUpRight size={13}/></a>
       </div>}
       <div className="whatsapp-cloud-steps">
         <strong>How this free setup works</strong>
@@ -443,6 +461,7 @@ function WorkspaceSettings({onClose,notify,emailConfigured}) {
       {error&&<div className="form-error">{error}</div>}
       <div className="modal-actions">
         {connected&&<Button variant="secondary" onClick={test} disabled={busy}>{busy?"Queueing…":"Send test message"} <Send size={14}/></Button>}
+        {(reconnectRequired||(!connected&&!pairing&&!reconnectReady))&&<Button variant="secondary" onClick={reconnect} disabled={busy}>{busy?"Preparing…":"Reconnect WhatsApp"} <RotateCcw size={14}/></Button>}
         <Button variant="ghost" onClick={()=>{setLoading(true);api("/api/admin/whatsapp/status").then(setStatus).catch(e=>setError(e.message)).finally(()=>setLoading(false));}}>Refresh status</Button>
       </div>
       <div className="whatsapp-cloud-warning"><ShieldCheck size={17}/><p>This connection uses an unofficial WhatsApp Web protocol, not Meta's official API. WhatsApp may restrict the sender account. Use only your dedicated sender number and send notifications only to people who have opted in. Avoid bulk or unsolicited messaging.</p></div>
