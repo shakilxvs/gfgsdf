@@ -251,14 +251,21 @@ function normalizeWhatsAppNumber(raw) {
   return normalized;
 }
 async function getWhatsAppGatewayStatus() {
+  const result=await pool.query(
+    "SELECT status,qr_data_url,phone_number,last_seen_at,last_error,updated_at FROM whatsapp_gateway.gateway_state WHERE id=true LIMIT 1"
+  );
+  const row=result.rows[0]||{};
+  const lastSeen=row.last_seen_at?new Date(row.last_seen_at).getTime():0;
+  const fresh=lastSeen>0&&(Date.now()-lastSeen)<45*60*1000;
+  const effectiveStatus=row.status==="connected"&&!fresh?"disconnected":(row.status||"disconnected");
   return {
-    status:"disconnected",
-    connected:false,
-    qr_data_url:"",
-    phone_number:"",
-    last_seen_at:null,
-    last_error:"WhatsApp setup is paused while TaskXVS is being moved to its own Neon account.",
-    updated_at:null
+    status:effectiveStatus,
+    connected:row.status==="connected"&&fresh,
+    qr_data_url:row.qr_data_url||"",
+    phone_number:row.phone_number||"",
+    last_seen_at:row.last_seen_at||null,
+    last_error:row.last_error||"",
+    updated_at:row.updated_at||null
   };
 }
 
@@ -278,10 +285,64 @@ async function sendBusinessNotification(business,event,task){
   return true;
  } catch(error){console.error("Task notification email error:",error.message);return false;}
 }
-async function sendBusinessWhatsAppNotification() {
-  // Temporarily disabled until TaskXVS is connected to its own Neon account.
-  // This prevents the app from querying or writing to the unrelated Neon project.
-  return false;
+async function sendBusinessWhatsAppNotification(businessId,event,task) {
+  try{
+    const business=await businessRow(businessId);
+    if(!business)return;
+    const recipients=[];
+    const ownerResult=await pool.query("SELECT setting_value FROM workspace_settings WHERE setting_key='owner_whatsapp' LIMIT 1");
+    const owner=ownerResult.rows[0]?.setting_value||{};
+    if(owner.whatsapp_number&&owner.whatsapp_notifications_enabled===true)recipients.push({userId:null,number:owner.whatsapp_number});
+    const members=await pool.query(
+      "SELECT DISTINCT u.id,u.whatsapp_number FROM users u JOIN business_assignments a ON a.user_id=u.id WHERE a.business_id=$1 AND u.active=true AND u.whatsapp_notifications_enabled=true AND u.whatsapp_number IS NOT NULL AND u.whatsapp_number<>''",
+      [businessId]
+    );
+    for(const member of members.rows)recipients.push({userId:member.id,number:member.whatsapp_number});
+    const unique=new Map();
+    for(const recipient of recipients){
+      const normalized=String(recipient.number||"").replace(/\D/g,"");
+      if(normalized&&!unique.has(normalized))unique.set(normalized,{...recipient,number:"+"+normalized});
+    }
+    const labels={"Task added":"Task added","Task updated":"Task updated","Task delayed":"Task delayed","Task done":"Task completed","In progress":"Task in progress","To do":"Task moved to To do","Task deleted":"Task deleted"};
+    const eventLabel=labels[event]||event;
+    const deadline=task?.deadline?String(task.deadline):"No deadline set";
+    const status=task?.status==="done"?"Done":task?.status==="in_progress"?"In progress":event==="Task delayed"?"Delayed":"To do";
+    const priority=String(task?.priority||"Normal");
+    const title=String(task?.title||"Workspace update");
+    const taskUrl="https://task.shakilxvs.com";
+    const message=[
+      "TASKXVS  |  "+business.name,
+      "",
+      eventLabel,
+      title,
+      task?.description?String(task.description).slice(0,500):"",
+      "",
+      "Status: "+status,
+      "Priority: "+priority,
+      "Deadline: "+deadline,
+      "",
+      taskUrl,
+      "",
+      "You receive this because you opted in to TaskXVS notifications for this workspace."
+    ].filter(Boolean).join("\n");
+    for(const recipient of unique.values()){
+      let logId=null;
+      try{
+        const log=await pool.query(
+          "INSERT INTO whatsapp_notification_logs (recipient_user_id,business_id,task_id,event_type,recipient_number,status) VALUES ($1,$2,$3,$4,$5,'queued') RETURNING id",
+          [recipient.userId,businessId,task?.id||null,event,recipient.number]
+        );
+        logId=log.rows[0].id;
+        await pool.query(
+          "INSERT INTO whatsapp_gateway.outbound_queue (notification_log_id,recipient_number,message_body) VALUES ($1,$2,$3)",
+          [logId,recipient.number,message]
+        );
+      }catch(error){
+        if(logId)await pool.query("UPDATE whatsapp_notification_logs SET status='failed',error_message=$2 WHERE id=$1",[logId,String(error.message).slice(0,1000)]).catch(()=>{});
+        console.error("WhatsApp notification queue failed:",error.message);
+      }
+    }
+  }catch(error){console.error("WhatsApp recipient lookup failed:",error.message);}
 }
 async function businessRow(businessId) {
   const result = await pool.query("SELECT * FROM businesses WHERE id=$1", [businessId]);
@@ -343,13 +404,29 @@ app.get("/api/admin/whatsapp/status",requireAuth,requireOwner,async(req,res,next
     res.set("Cache-Control","no-store").json(state);
   }catch(e){next(e);}
 });
-app.post("/api/admin/whatsapp/test",requireAuth,requireOwner,async(_req,res)=>{
-  return res.status(503).json({error:"WhatsApp setup is paused while TaskXVS is moved to its own Neon account."});
+app.post("/api/admin/whatsapp/test",requireAuth,requireOwner,async(req,res,next)=>{
+  try{
+    const ownerResult=await pool.query("SELECT setting_value FROM workspace_settings WHERE setting_key='owner_whatsapp' LIMIT 1");
+    const owner=ownerResult.rows[0]?.setting_value||{};
+    if(!owner.whatsapp_number||owner.whatsapp_notifications_enabled!==true){
+      return res.status(400).json({error:"Save your WhatsApp number and enable notification opt-in under My account first."});
+    }
+    const message="TASKXVS test message\n\nYour cloud WhatsApp connection is ready.\n\nhttps://task.shakilxvs.com";
+    const log=await pool.query(
+      "INSERT INTO whatsapp_notification_logs (event_type,recipient_number,status) VALUES ('connection_test',$1,'queued') RETURNING id",
+      [owner.whatsapp_number]
+    );
+    await pool.query(
+      "INSERT INTO whatsapp_gateway.outbound_queue (notification_log_id,recipient_number,message_body) VALUES ($1,$2,$3)",
+      [log.rows[0].id,owner.whatsapp_number,message]
+    );
+    res.json({ok:true,queued:true,message:"Test message added to the cloud queue. It will send when the free worker is connected."});
+  }catch(e){next(e);}
 });
 app.get("/api/admin/whatsapp/logs",requireAuth,requireOwner,async(req,res,next)=>{
   try{
     const limit=Math.max(1,Math.min(100,Number.parseInt(req.query.limit,10)||50));
-    const result=await pool.query("SELECT l.id,l.event_type,l.recipient_number,l.status,l.error_message,l.created_at,l.sent_at,l.delivered_at,l.read_at,b.name AS business_name,t.title AS task_title,u.display_name AS recipient_name FROM whatsapp_notification_logs l LEFT JOIN businesses b ON b.id=l.business_id LEFT JOIN tasks t ON t.id=l.task_id LEFT JOIN users u ON u.id=l.recipient_user_id ORDER BY l.created_at DESC LIMIT $1",[limit]);
+    const result=await pool.query("SELECT l.id,l.event_type,l.recipient_number,COALESCE(q.status,l.status) AS status,COALESCE(q.error_message,l.error_message) AS error_message,l.created_at,COALESCE(q.sent_at,l.sent_at) AS sent_at,l.delivered_at,l.read_at,b.name AS business_name,t.title AS task_title,u.display_name AS recipient_name FROM whatsapp_notification_logs l LEFT JOIN whatsapp_gateway.outbound_queue q ON q.notification_log_id=l.id LEFT JOIN businesses b ON b.id=l.business_id LEFT JOIN tasks t ON t.id=l.task_id LEFT JOIN users u ON u.id=l.recipient_user_id ORDER BY l.created_at DESC LIMIT $1",[limit]);
     res.set("Cache-Control","no-store").json({logs:result.rows});
   }catch(e){next(e);}
 });
