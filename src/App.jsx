@@ -766,6 +766,7 @@ function App() {
     {viewingTask&&<TaskDetails task={tasks.find(t=>t.id===viewingTask.id)||viewingTask} business={businesses.find(b=>b.id===viewingTask.business_id)} category={categories.find(c=>c.id===viewingTask.category_id)} today={today} canWrite={canWriteBusiness(viewingTask.business_id)} onClose={()=>setViewingTask(null)} onEdit={()=>{setEditingTask(tasks.find(t=>t.id===viewingTask.id)||viewingTask);setViewingTask(null);setModal("task");}} onComplete={()=>requestStatusChange(tasks.find(t=>t.id===viewingTask.id)||viewingTask,"done")}/>}
     {completingTask&&<CompleteTaskDialog task={completingTask} status={requestedStatus} note={completionNote} setNote={setCompletionNote} onCancel={()=>{setCompletingTask(null);setCompletionNote("");}} onConfirm={confirmCompletion} busy={completionBusy}/>}
     {activityOpen&&isOwner&&<ActivityFeed items={activityItems} onClose={()=>setActivityOpen(false)}/>}
+    {accountOpen&&<AccountSettings account={accountDetails||sessionUser} onClose={()=>setAccountOpen(false)} onSave={saveAccount}/>}
     {toast&&<div className="toast-message"><Check size={15}/>{toast}</div>}
   </div>;
 }
