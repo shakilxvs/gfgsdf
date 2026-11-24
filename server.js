@@ -438,7 +438,7 @@ app.post("/api/admin/users", requireAuth, requireOwner, async (req, res, next) =
     const displayName = String(req.body?.display_name || username).trim();
     const email = String(req.body?.email || "").trim() || null;
     const whatsappNumber = normalizeWhatsAppNumber(req.body?.whatsapp_number);
-    const whatsappEnabled = req.body?.whatsapp_notifications_enabled !== false;
+    const whatsappEnabled = req.body?.whatsapp_notifications_enabled === true;
     const password = String(req.body?.password || "");
     const assignments = Array.isArray(req.body?.assignments) ? req.body.assignments : [];
     if (!/^[a-zA-Z0-9._-]{3,40}$/.test(username)) return res.status(400).json({ error: "Username must be 3–40 characters using letters, numbers, dots, underscores or hyphens." });
