@@ -136,11 +136,15 @@ app.post("/api/auth/logout", (req, res) => {
 });
 
 async function initDatabase() {
-  const client = await pool.connect();
-  try {
-    const schema = fs.readFileSync(path.join(__dirname, "db/schema.sql"), "utf8");
-    await client.query(schema);
-  } finally { client.release(); }
+  if (process.env.RUN_DB_SETUP === "true") {
+    const client = await pool.connect();
+    try {
+      const schema = fs.readFileSync(path.join(__dirname, "db/schema.sql"), "utf8");
+      await client.query(schema);
+    } finally { client.release(); }
+  } else {
+    await pool.query("SELECT 1");
+  }
 }
 
 app.get("/api/bootstrap", requireAuth, async (_req, res, next) => {
