@@ -1268,3 +1268,47 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
     color:inherit;
   }
 }
+
+
+/* Match the Overview glyph badge exactly to the business initial badges. */
+.sidebar-overview-link .overview-bullet {
+  width:28px;
+  height:28px;
+  flex:0 0 28px;
+  display:grid;
+  place-items:center;
+  border-radius:50%;
+  background:#f0f0f0;
+  color:#62625b;
+}
+.sidebar-overview-link.is-active .overview-bullet {
+  background:#d5d5d0;
+  color:#111;
+}
+.sidebar-collapsed .sidebar-overview-link .overview-bullet {
+  width:34px;
+  height:34px;
+  flex:0 0 34px;
+  border-radius:50%;
+  background:#f0f0f0;
+  color:#62625b;
+}
+.sidebar-collapsed .sidebar-overview-link.is-active .overview-bullet {
+  background:#d5d5d0;
+  color:#111;
+}
+@media (max-width:900px) {
+  .sidebar.sidebar-collapsed .sidebar-overview-link .overview-bullet {
+    width:28px;
+    height:28px;
+    flex:0 0 28px;
+    display:grid;
+    border-radius:50%;
+    background:#f0f0f0;
+    color:#62625b;
+  }
+  .sidebar.sidebar-collapsed .sidebar-overview-link.is-active .overview-bullet {
+    background:#d5d5d0;
+    color:#111;
+  }
+}
