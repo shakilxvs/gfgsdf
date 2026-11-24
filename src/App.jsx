@@ -6,15 +6,26 @@ import {
   LogOut, Mail, Megaphone, Menu, MoreHorizontal, Palette, PenLine, Percent,
   Plus, Search, Settings, ShoppingBag, SlidersHorizontal, Tag, Trash2,
   Video, Wallet, X, Pencil, RotateCcw, AlertCircle, CalendarRange,
-  Layers3, CircleCheck, CircleAlert, PanelLeftClose, Grid2X2, Sparkles, Lock
+  Layers3, CircleCheck, CircleAlert, PanelLeftClose, PanelLeftOpen, Grid2X2, Sparkles, Lock,
+  Terminal, PanelTop, Blocks, Bug, ClipboardCheck, Plug, Workflow, SearchCheck, FileText,
+  NotebookPen, Instagram, ChartNoAxesCombined, ChartLine, ListChecks, PackageSearch,
+  Truck, Boxes, Warehouse, ShoppingBasket, Headset, Microscope, Shapes, BadgePercent,
+  Settings2, ShieldCheck, Users, UserPlus, Building2, CalendarClock, CircleUserRound,
+  Send, UserRound, LockKeyhole, MailCheck, BellRing
 } from "lucide-react";
 
 const ICONS = {
   "shopping-bag": ShoppingBag, percent: Percent, tag: Tag, video: Video,
-  mail: Mail, megaphone: Megaphone, palette: Palette, code: Code2,
-  search: Search, "pen-line": PenLine, settings: Settings, wallet: Wallet,
-  "circle-dot": CircleDot, briefcase: BriefcaseBusiness, calendar: CalendarDays,
-  activity: Activity, layers: Layers3, sparkles: Sparkles,
+  mail: Mail, megaphone: Megaphone, palette: Palette, code: Code2, "code-2": Code2,
+  search: Search, "search-check": SearchCheck, "pen-line": PenLine, "file-text": FileText,
+  "notebook-pen": NotebookPen, instagram: Instagram, "chart-no-axes-combined": ChartNoAxesCombined,
+  "chart-line": ChartLine, "list-checks": ListChecks, "package-search": PackageSearch,
+  truck: Truck, boxes: Boxes, warehouse: Warehouse, "shopping-basket": ShoppingBasket,
+  headset: Headset, microscope: Microscope, shapes: Shapes, "badge-percent": BadgePercent,
+  "settings-2": Settings2, terminal: Terminal, "panel-top": PanelTop, blocks: Blocks,
+  bug: Bug, "clipboard-check": ClipboardCheck, plug: Plug, workflow: Workflow,
+  wallet: Wallet, "circle-dot": CircleDot, briefcase: BriefcaseBusiness,
+  calendar: CalendarDays, activity: Activity, layers: Layers3, sparkles: Sparkles,
   ShoppingBag, Percent, Tag, Video, Mail, Megaphone, Palette, Code2, Search,
   PenLine, Settings, Wallet, CircleDot, BriefcaseBusiness, CalendarDays,
   Activity, Layers3, Sparkles
@@ -28,7 +39,14 @@ const STATUSES = [
   { value:"todo", label:"To do" }, { value:"in_progress", label:"In progress" },
   { value:"done", label:"Done" }
 ];
-const ICON_OPTIONS = ["shopping-bag","percent","tag","video","mail","megaphone","palette","code","search","pen-line","settings","wallet","circle-dot"];
+const ICON_OPTIONS = [
+  "shopping-bag","percent","badge-percent","tag","video","mail","megaphone","palette",
+  "code-2","terminal","panel-top","blocks","bug","clipboard-check","plug","workflow",
+  "search-check","file-text","notebook-pen","instagram","chart-no-axes-combined","chart-line",
+  "list-checks","package-search","truck","boxes","warehouse","shopping-basket","headset",
+  "microscope","settings-2","wallet","shapes"
+];
+const ICON_LABELS = Object.fromEntries(ICON_OPTIONS.map(k=>[k,k.split("-").map(w=>w[0].toUpperCase()+w.slice(1)).join(" ")]));
 
 function todayDhaka() {
   return new Intl.DateTimeFormat("en-CA", { timeZone:"Asia/Dhaka", year:"numeric", month:"2-digit", day:"2-digit" }).format(new Date());
@@ -77,8 +95,8 @@ async function api(path, options={}) {
   return body;
 }
 
-function Brand() {
-  return <div className="brand-lockup"><div className="brand-symbol">S</div><div><div className="brand-name">SHLOMO</div><div className="brand-caption">PERSONAL WORKSPACE</div></div></div>;
+function Brand({collapsed=false}) {
+  return <div className="brand-lockup"><div className="brand-symbol">X</div>{!collapsed&&<div><div className="brand-name">TASKXVS</div><div className="brand-caption">SHAKILXVS WORKSPACE</div></div>}</div>;
 }
 function Button({children, variant="primary", size="normal", className="", ...props}) {
   return <button className={`button button-${variant} button-${size} ${className}`} {...props}>{children}</button>;
@@ -104,7 +122,7 @@ function Modal({title, subtitle, children, onClose, wide=false}) {
 }
 
 function Login({onLogin}) {
-  const [username,setUsername]=useState("shlomock");
+  const [username,setUsername]=useState("shakilxvs");
   const [password,setPassword]=useState("");
   const [show,setShow]=useState(false);
   const [busy,setBusy]=useState(false);
@@ -117,15 +135,15 @@ function Login({onLogin}) {
   }
   return <main className="login-screen">
     <div className="login-panel">
-      <div className="login-brand"><div className="login-mark">S</div><div className="login-wordmark">SHLOMO</div></div>
-      <div className="login-copy"><span className="eyebrow">YOUR WORK, IN ONE PLACE</span><h1>Welcome back.</h1><p>A calmer way to stay on top of every business.</p></div>
+      <div className="login-brand"><div className="login-mark">X</div><div className="login-wordmark">TASKXVS</div></div>
+      <div className="login-copy"><span className="eyebrow">SHAKILXVS WORKSPACE</span><h1>Welcome back.</h1><p>One workspace for all your businesses.</p></div>
       <form onSubmit={submit} className="login-form">
         <label className="field"><span>Login ID</span><div className="input-with-icon"><BriefcaseBusiness size={16}/><input value={username} onChange={e=>setUsername(e.target.value)} autoComplete="username" required /></div></label>
         <label className="field"><span>Password</span><div className="input-with-icon"><Lock size={15}/><input type={show?"text":"password"} value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" required/><button type="button" className="reveal-button" onClick={()=>setShow(v=>!v)} aria-label={show?"Hide password":"Show password"}><Eye size={16}/></button></div></label>
         {error && <div className="login-error" role="alert"><AlertCircle size={15}/>{error}</div>}
         <Button className="login-submit" disabled={busy}>{busy?"Signing in…":<>Sign in <ArrowUpRight size={16}/></>}</Button>
       </form>
-      <div className="login-foot"><span className="secure-dot"/> Private workspace · single owner</div>
+      <div className="login-foot"><span className="secure-dot"/> Secure workspace</div>
     </div>
     <div className="login-aside"><div className="aside-art"><div className="art-card art-card-one"><div className="art-label">TODAY'S FOCUS</div><div className="art-line long"/><div className="art-line medium"/><div className="art-row"><span/><span/><span/></div></div><div className="art-card art-card-two"><div className="art-check"><Check size={15}/></div><div className="art-line medium"/><div className="art-line short"/></div><div className="art-circle"/></div><div className="aside-note"><span>FOCUS BETTER.</span><span>MOVE WITH CLARITY.</span></div></div>
   </main>;
@@ -156,23 +174,33 @@ function TaskCard({task, category, business, today, onEdit, onDelete, onStatus})
   </article>;
 }
 
-function TaskListRow({task,category,business,today,onEdit,onDelete,onStatus}) {
-  const Icon = ICONS[category?.icon] || Tag;
-  const delayed = isOverdue(task,today);
-  const statusText = displayStatus(task,today);
+function DeadlineView({value,today}) {
+  if(!value)return <span className="deadline-empty">No date</span>;
+  const days=dayDiff(value,today);
+  return <div className={`deadline-view ${days<0?"deadline-late":days<=2?"deadline-soon":""}`}>
+    <span className="deadline-icon"><CalendarDays size={15}/></span>
+    <span className="deadline-copy"><strong>{formatDate(value,true)}</strong><small>{days<0?`${Math.abs(days)}d late`:days===0?"Due today":days===1?"Tomorrow":`${days} days left`}</small></span>
+  </div>;
+}
+function TaskListRow({task,category,business,today,onEdit,onDelete,onStatus,canWrite=true}) {
+  const Icon=ICONS[category?.icon]||Tag;
+  const delayed=isOverdue(task,today);
+  const statusText=displayStatus(task,today);
   return <article className={`task-row ${task.status==="done"?"task-done":""}`}>
-    <span className="task-row-category" title={category?.name||"Uncategorized"} style={{"--chip-color":category?.color||"#d97737"}}><Icon size={19}/></span>
+    <span className="task-row-category" title={category?.name||"Uncategorized"} style={{"--chip-color":category?.color||"#d97737"}}><Icon size={20}/></span>
     <div className="task-row-main">
       <div className="task-row-title-line"><h3>{task.title}</h3>{business&&<span className="task-row-business">{business.name}</span>}</div>
       {task.description&&<p className="task-row-description">{task.description}</p>}
     </div>
-    <div className="task-row-deadline"><small>Deadline</small><strong className={delayed?"text-delayed":""}>{task.deadline?formatDate(task.deadline,true):"No deadline"}</strong>{task.deadline&&<span>{relativeDeadline(task,today)}</span>}</div>
-    <div className={`task-row-status ${delayed?"status-delayed":task.status==="done"?"status-done":task.status==="in_progress"?"status-progress":"status-todo"}`}>{statusText}</div>
-    <div className="task-row-actions">
-      <select value={task.status} onChange={e=>onStatus(e.target.value)} aria-label="Change task status"><option value="todo">To do</option><option value="in_progress">In progress</option><option value="done">Done</option></select>
-      <IconButton label="Edit task" onClick={onEdit}><Pencil size={15}/></IconButton>
-      <IconButton label="Delete task" onClick={onDelete}><Trash2 size={15}/></IconButton>
-    </div>
+    <div className="task-row-deadline"><span className="deadline-label">DEADLINE</span><DeadlineView value={task.deadline} today={today}/></div>
+    <div className={`task-row-status-text ${delayed?"status-delayed":task.status==="done"?"status-done":task.status==="in_progress"?"status-progress":"status-todo"}`}>{statusText}</div>
+    {canWrite&&<div className="task-row-actions">
+      <select value={task.status} onChange={e=>onStatus(e.target.value)} aria-label="Change task status">
+        <option value="todo">To do</option><option value="in_progress">In progress</option><option value="done">Done</option>
+      </select>
+      <IconButton label="Edit task" onClick={onEdit}><Pencil size={16}/></IconButton>
+      <IconButton label="Delete task" onClick={onDelete}><Trash2 size={16}/></IconButton>
+    </div>}
   </article>;
 }
 
@@ -222,7 +250,7 @@ function TaskForm({task,businesses,categories,defaultBusiness,onClose,onSave}) {
 }
 
 function CategoryManager({business,categories,onClose,onAdd,onEdit,onDelete}) {
-  const [name,setName]=useState(""); const [icon,setIcon]=useState("tag"); const [color,setColor]=useState(COLORS[0]); const [error,setError]=useState("");
+  const [name,setName]=useState(""); const [icon,setIcon]=useState("shopping-bag"); const [color,setColor]=useState(COLORS[0]); const [error,setError]=useState("");
   const [editing,setEditing]=useState(null);
   const list=categories.filter(c=>c.business_id===business.id);
   async function submit(e) {
@@ -230,7 +258,7 @@ function CategoryManager({business,categories,onClose,onAdd,onEdit,onDelete}) {
     try {
       if(editing) await onEdit(editing.id,{name:name.trim(),icon,color});
       else await onAdd({business_id:business.id,name:name.trim(),icon,color});
-      setEditing(null); setName(""); setIcon("tag"); setColor(COLORS[0]);
+      setEditing(null); setName(""); setIcon("shopping-bag"); setColor(COLORS[0]);
     } catch(err){setError(err.message);}
   }
   function startEdit(c){setEditing(c);setName(c.name);setIcon(c.icon||"tag");setColor(c.color||COLORS[0]);}
@@ -244,11 +272,11 @@ function CategoryManager({business,categories,onClose,onAdd,onEdit,onDelete}) {
       <div className="category-form-heading">{editing?"Edit category":"Add a category"}</div>
       <div className="form-grid category-form-grid">
         <label className="field"><span>Category name</span><input value={name} onChange={e=>setName(e.target.value)} maxLength={40} placeholder="e.g. Product launch" required/></label>
-        <label className="field"><span>Icon</span><select value={icon} onChange={e=>setIcon(e.target.value)}>{ICON_OPTIONS.map(k=><option key={k} value={k}>{k}</option>)}</select></label>
+        <label className="field"><span>Icon</span><select value={icon} onChange={e=>setIcon(e.target.value)}>{ICON_OPTIONS.map(k=><option key={k} value={k}>{ICON_LABELS[k]||k}</option>)}</select></label>
       </div>
       <div className="color-palette"><span>Accent</span>{COLORS.map(c=><button type="button" key={c} className={`color-dot ${color===c?"selected":""}`} style={{background:c}} onClick={()=>setColor(c)} aria-label={`Select ${c}`}/>) }<span className="category-preview selected-preview" style={{background:color+"18",color}}><SelectedIcon size={15}/></span></div>
       {error && <div className="form-error">{error}</div>}
-      <div className="modal-actions">{editing&&<Button variant="ghost" type="button" onClick={()=>{setEditing(null);setName("");setIcon("tag");setColor(COLORS[0]);}}>Cancel edit</Button>}<Button>{editing?"Save category":"Add category"}</Button></div>
+      <div className="modal-actions">{editing&&<Button variant="ghost" type="button" onClick={()=>{setEditing(null);setName("");setIcon("shopping-bag");setColor(COLORS[0]);}}>Cancel edit</Button>}<Button>{editing?"Save category":"Add category"}</Button></div>
     </form>
   </Modal>;
 }
