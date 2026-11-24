@@ -280,7 +280,7 @@ async function sendBusinessWhatsAppNotification(businessId,event,task) {
     if(owner.whatsapp_number&&owner.whatsapp_notifications_enabled===true)recipients.push({userId:null,number:owner.whatsapp_number});
     const members=await pool.query("SELECT DISTINCT u.id,u.whatsapp_number FROM users u JOIN business_assignments a ON a.user_id=u.id WHERE a.business_id=$1 AND u.active=true AND u.whatsapp_notifications_enabled=true AND u.whatsapp_number IS NOT NULL AND u.whatsapp_number<>''",[businessId]);
     for(const member of members.rows)recipients.push({userId:member.id,number:member.whatsapp_number});
-    const unique=[...new Map(recipients.map(r=>[r.number.replace(/\\D/g,""),r])).values()];
+    const unique=[...new Map(recipients.map(r=>[r.number.replace(/\D/g,""),r])).values()];
     const labels={"Task added":"Task added","Task updated":"Task updated","Task delayed":"Task delayed","Task done":"Task completed","In progress":"Task in progress","To do":"Task moved to To do","Task deleted":"Task deleted"};
     const eventLabel=labels[event]||event;
     const deadline=task?.deadline?String(task.deadline):"No deadline";
@@ -290,7 +290,7 @@ async function sendBusinessWhatsAppNotification(businessId,event,task) {
       try{
         const log=await pool.query("INSERT INTO whatsapp_notification_logs (recipient_user_id,business_id,task_id,event_type,recipient_number,status) VALUES ($1,$2,$3,$4,$5,'queued') RETURNING id",[recipient.userId,businessId,task?.id||null,event,recipient.number]);
         logId=log.rows[0].id;
-        const payload={messaging_product:"whatsapp",recipient_type:"individual",to:recipient.number.replace(/\\D/g,""),type:"template",template:{name:WHATSAPP_TEMPLATE_NAME,language:{code:WHATSAPP_TEMPLATE_LANGUAGE},components:[{type:"body",parameters:[
+        const payload={messaging_product:"whatsapp",recipient_type:"individual",to:recipient.number.replace(/\D/g,""),type:"template",template:{name:WHATSAPP_TEMPLATE_NAME,language:{code:WHATSAPP_TEMPLATE_LANGUAGE},components:[{type:"body",parameters:[
           {type:"text",text:String(eventLabel).slice(0,120)},
           {type:"text",text:String(business.name).slice(0,120)},
           {type:"text",text:String(task?.title||"Workspace update").slice(0,120)},
