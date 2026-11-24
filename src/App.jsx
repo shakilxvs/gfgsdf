@@ -828,7 +828,15 @@ function App() {
               <label className="filter-field"><span>Sort by</span><select value={overviewFilters.sort} onChange={e=>setOverviewFilters(v=>({...v,sort:e.target.value}))}><option value="deadline">Deadline soonest</option><option value="deadline_latest">Deadline latest</option><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="updated">Recently updated</option><option value="priority_high">Priority: high to low</option><option value="priority_low">Priority: low to high</option><option value="title_az">Title: A to Z</option><option value="title_za">Title: Z to A</option></select></label>
             </div>
           </div>}
-          {loading?<div className="loading-block">Loading…</div>:overviewTasksSorted.length?<div className={listMode?"task-list-mode":"task-masonry"}>{overviewTasksSorted.map(t=>taskCard(t,true))}</div>:overviewTasks.length?<EmptyState title="No tasks match these filters" description="Adjust the filters or clear them to see your tasks." action={<Button variant="secondary" onClick={clearOverviewFilters}>Clear filters</Button>}/>:<EmptyState title="No tasks yet" description="Add a task to see it here." action={<Button onClick={openNewTask}><Plus size={15}/> Add task</Button>}/></section> : selectedBusiness ? <section className="page-section">
+          {loading ? (
+            <div className="loading-block">Loading…</div>
+          ) : overviewTasksSorted.length ? (
+            <div className={listMode?"task-list-mode":"task-masonry"}>{overviewTasksSorted.map(t=>taskCard(t,true))}</div>
+          ) : overviewTasks.length ? (
+            <EmptyState title="No tasks match these filters" description="Adjust the filters or clear them to see your tasks." action={<Button variant="secondary" onClick={clearOverviewFilters}>Clear filters</Button>}/>
+          ) : (
+            <EmptyState title="No tasks yet" description="Add a task to see it here." action={<Button onClick={openNewTask}><Plus size={15}/> Add task</Button>}/>
+          )}</section> : selectedBusiness ? <section className="page-section">
           <div className="business-hero business-hero-compact">
             <div className="business-summary"><strong>{tasks.filter(t=>t.business_id===active).length} tasks</strong><span>{progressFor(active).percent}% complete {selectedBusiness.permission==="read"&&" · Read only"}</span></div>
             <div className="business-actions">
