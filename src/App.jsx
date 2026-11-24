@@ -163,8 +163,7 @@ function TaskCard({task, category, business, today, onEdit, onDelete, onStatus, 
     <div className="task-title-line">{canWrite&&<button className={`complete-control ${task.status==="done"?"complete-checked":""}`} aria-label={task.status==="done"?"Reopen task":"Mark complete"} onClick={()=>onStatus(task.status==="done"?"todo":"done")}>{task.status==="done"&&<Check size={13}/>}</button>}<h3>{task.title}</h3></div>
     {task.description && <p className="task-description">{task.description}</p>}
     <div className="task-badges">
-      {overdue?<span className="status-select status-delayed">Delayed</span>:<span className={`task-card-status ${task.status==="done"?"status-done":task.status==="in_progress"?"status-progress":"status-todo"}`}>{displayStatus(task,today)}</span>}
-      {canWrite&&!overdue&&<select className={`status-select status-${task.status}`} value={task.status} onChange={e=>onStatus(e.target.value)} aria-label="Change task status">{STATUSES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select>}
+      {canWrite?<select className={`status-select status-${task.status} ${overdue?"status-delayed":""}`} value={overdue?"delayed":task.status} onChange={e=>onStatus(e.target.value)} aria-label="Change task status">{overdue&&<option value="delayed" disabled>Delayed</option>}{STATUSES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select>:<span className={`task-card-status ${overdue?"status-delayed":task.status==="done"?"status-done":task.status==="in_progress"?"status-progress":"status-todo"}`}>{displayStatus(task,today)}</span>}
       {task.priority!=="normal" && <span className={`priority-chip priority-${task.priority}`}>{priorityLabel(task.priority)} priority</span>}
       {task.deadline && <DeadlineView value={task.deadline} today={today}/>}
     </div>
@@ -191,11 +190,11 @@ function TaskListRow({task,category,business,today,onEdit,onDelete,onStatus,canW
       {task.description&&<p className="task-row-description">{task.description}</p>}
     </div>
     <div className="task-row-deadline"><span className="deadline-label">DEADLINE</span><DeadlineView value={task.deadline} today={today}/></div>
-    <div className={`task-row-status-text ${delayed?"status-delayed":task.status==="done"?"status-done":task.status==="in_progress"?"status-progress":"status-todo"}`}>{statusText}</div>
-    {canWrite&&<div className="task-row-actions">
-      <select value={task.status} onChange={e=>onStatus(e.target.value)} aria-label="Change task status">
+        <div className="task-row-actions">
+      {canWrite?<select className={delayed?"task-status-select status-delayed":""} value={delayed?"delayed":task.status} onChange={e=>onStatus(e.target.value)} aria-label="Change task status">
+        {delayed&&<option value="delayed" disabled>Delayed</option>}
         <option value="todo">To do</option><option value="in_progress">In progress</option><option value="done">Done</option>
-      </select>
+      </select>:<span className={`task-status-readonly ${delayed?"status-delayed":""}`}>{statusText}</span>}
       <IconButton label="Edit task" onClick={onEdit}><Pencil size={16}/></IconButton>
       <IconButton label="Delete task" onClick={onDelete}><Trash2 size={16}/></IconButton>
     </div>}
