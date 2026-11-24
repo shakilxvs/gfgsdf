@@ -264,7 +264,7 @@ app.post("/api/admin/users", requireAuth, requireOwner, async (req, res, next) =
     const password = String(req.body?.password || "");
     const assignments = Array.isArray(req.body?.assignments) ? req.body.assignments : [];
     if (!/^[a-zA-Z0-9._-]{3,40}$/.test(username)) return res.status(400).json({ error: "Username must be 3–40 characters using letters, numbers, dots, underscores or hyphens." });
-    if (password.length < 12) return res.status(400).json({ error: "Use a password with at least 12 characters." });
+    if (password.length < 4) return res.status(400).json({ error: "Use a password with at least 4 characters." });
     if (!displayName || displayName.length > 80) return res.status(400).json({ error: "Enter a display name." });
     if (email && !validEmailList(email)) return res.status(400).json({ error: "Enter a valid email address." });
     const credentials = newPasswordRecord(password);
@@ -312,7 +312,7 @@ app.patch("/api/admin/users/:id", requireAuth, requireOwner, async (req, res, ne
     }
     if (req.body?.password) {
       const password = String(req.body.password);
-      if (password.length < 12) throw Object.assign(new Error("Use a password with at least 12 characters."),{status:400});
+      if (password.length < 4) throw Object.assign(new Error("Use a password with at least 4 characters."),{status:400});
       const credentials = newPasswordRecord(password);
       await client.query("UPDATE users SET password_salt=$2,password_hash=$3,token_version=token_version+1 WHERE id=$1",
         [req.params.id,credentials.salt,credentials.hash]);
