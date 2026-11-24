@@ -1674,3 +1674,119 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 }
 .whatsapp-cloud-warning svg { margin-top:1px; }
 .whatsapp-cloud-warning p { margin:0; font-size:10px; line-height:1.55; }
+
+
+/* TaskXVS sidebar brand is the collapse/expand control. */
+.brand-toggle {
+  display:flex;
+  flex:1;
+  min-width:0;
+  align-items:center;
+  gap:10px;
+  border:0;
+  padding:0 4px;
+  background:transparent;
+  color:inherit;
+  text-align:left;
+  cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+}
+.brand-toggle:focus-visible {
+  outline:2px solid #e60023;
+  outline-offset:4px;
+  border-radius:12px;
+}
+.sidebar-brand-row { justify-content:flex-start; }
+.sidebar-collapsed .sidebar-search { display:none!important; }
+
+/* Overview list controls and the single filter/sort button. */
+.overview-task-controls {
+  display:flex;
+  align-items:center;
+  gap:7px;
+  margin-left:auto;
+}
+.overview-task-heading .view-toggle { margin-left:0; }
+.overview-filter-trigger {
+  position:relative;
+  width:40px;
+  height:40px;
+  display:grid;
+  place-items:center;
+  border:1px solid #e5e5e0;
+  border-radius:50%;
+  color:#555;
+  background:#fff;
+  transition:background .15s,border-color .15s,color .15s;
+}
+.overview-filter-trigger:hover,.overview-filter-trigger.is-active {
+  color:#111;
+  border-color:#d5d5d0;
+  background:#f5f5f3;
+}
+.overview-filter-trigger span {
+  position:absolute;
+  top:-4px;
+  right:-4px;
+  min-width:17px;
+  height:17px;
+  display:grid;
+  place-items:center;
+  padding:0 4px;
+  border-radius:999px;
+  background:#e60023;
+  color:#fff;
+  font-size:9px;
+  font-weight:800;
+}
+.overview-filters-panel { margin:-1px 0 13px; }
+.overview-filters-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+
+/* Owner-only workspace connections/settings panel. */
+.workspace-settings { display:grid; gap:13px; }
+.settings-section-heading { display:grid; gap:3px; margin-top:2px; }
+.settings-section-heading strong { color:#111; font-size:13px; font-weight:750; }
+.settings-section-heading span { color:#777; font-size:11px; line-height:1.45; }
+.settings-section-heading-spaced { margin-top:7px; }
+.settings-integration-card {
+  display:grid;
+  grid-template-columns:40px minmax(0,1fr) auto;
+  align-items:center;
+  gap:12px;
+  padding:13px 14px;
+  border:1px solid #e5e5e0;
+  border-radius:14px;
+  background:#fff;
+}
+.settings-integration-icon {
+  width:38px;
+  height:38px;
+  display:grid;
+  place-items:center;
+  border-radius:12px;
+  color:#333;
+  background:#f1f1ef;
+}
+.settings-integration-copy { display:grid; gap:4px; min-width:0; }
+.settings-integration-copy strong { color:#171717; font-size:12px; font-weight:700; }
+.settings-integration-copy span { color:#777; font-size:10px; line-height:1.45; }
+.settings-connection-state {
+  padding:6px 9px;
+  border-radius:999px;
+  color:#7a634b;
+  background:#f6f1e9;
+  font-size:10px;
+  font-weight:700;
+  white-space:nowrap;
+}
+.settings-connection-state.is-connected {
+  color:#477052;
+  background:#edf5ee;
+}
+@media (max-width:700px) {
+  .overview-task-heading { flex-wrap:wrap; }
+  .overview-task-controls { margin-left:auto; }
+  .overview-filters-grid { grid-template-columns:1fr; }
+  .settings-integration-card { grid-template-columns:36px minmax(0,1fr); }
+  .settings-connection-state { grid-column:2; justify-self:start; }
+}

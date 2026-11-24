@@ -95,8 +95,8 @@ async function api(path, options={}) {
   return body;
 }
 
-function Brand({collapsed=false}) {
-  return <div className="brand-lockup"><div className="brand-symbol"><ListChecks size={20} strokeWidth={2.4}/></div>{!collapsed&&<div className="brand-name">TASKXVS</div>}</div>;
+function Brand({collapsed=false,onClick}) {
+  return <button type="button" className="brand-lockup brand-toggle" onClick={onClick} aria-label={collapsed?"Expand sidebar":"Collapse sidebar"} title={collapsed?"Expand sidebar":"Collapse sidebar"}><span className="brand-symbol"><ListChecks size={20} strokeWidth={2.4}/></span>{!collapsed&&<span className="brand-name">TASKXVS</span>}</button>;
 }
 function Button({children, variant="primary", size="normal", className="", ...props}) {
   return <button className={`button button-${variant} button-${size} ${className}`} {...props}>{children}</button>;
@@ -388,7 +388,7 @@ function UserManager({users,businesses,onClose,onSave,onDelete,onToggle}) {
   </Modal>;
 }
 
-function WhatsAppCloudSettings({onClose,notify}) {
+function WorkspaceSettings({onClose,notify,emailConfigured}) {
   const [status,setStatus]=useState({status:"disconnected",connected:false,qr_data_url:""});
   const [loading,setLoading]=useState(true);
   const [busy,setBusy]=useState(false);
@@ -414,15 +414,20 @@ function WhatsAppCloudSettings({onClose,notify}) {
   }
   const connected=status.status==="connected";
   const pairing=status.status==="qr"&&Boolean(status.qr_data_url);
-  return <Modal title="WhatsApp notifications" subtitle="Connect the dedicated sender to the free TaskXVS cloud worker." onClose={onClose} wide>
-    <div className="whatsapp-cloud-settings">
+  const paused=Boolean(status.last_error);
+  return <Modal title="Settings" subtitle="Manage workspace connections and notification services." onClose={onClose} wide>
+    <div className="workspace-settings">
+      <div className="settings-section-heading"><strong>Connections</strong><span>Workspace integrations are visible to the owner only.</span></div>
+      <div className="settings-integration-card"><span className="settings-integration-icon"><Mail size={19}/></span><div className="settings-integration-copy"><strong>Email notifications</strong><span>Task updates and business notification emails through Resend.</span></div><span className={emailConfigured?"settings-connection-state is-connected":"settings-connection-state"}>{emailConfigured?"Configured":"Not configured"}</span></div>
+      <div className="settings-section-heading settings-section-heading-spaced"><strong>WhatsApp notifications</strong><span>Dedicated sender and cloud connection status.</span></div>
+      <div className="whatsapp-cloud-settings">
       <div className={connected?"whatsapp-cloud-card connected":"whatsapp-cloud-card pending"}>
         <div className="whatsapp-cloud-symbol"><MessageCircle size={21}/></div>
         <div className="whatsapp-cloud-copy">
-          <strong>{connected?"WhatsApp sender connected":pairing?"Scan to connect WhatsApp":"Cloud sender waiting"}</strong>
-          <span>{loading?"Checking cloud worker…":connected?("Connected "+(status.phone_number||"sender number")+". Messages are sent by the scheduled cloud worker."):(status.status==="error"||status.status==="logged_out")?(status.last_error||"The sender needs to be paired again."):"The free cloud worker will display a QR code when its next run starts."}</span>
+          <strong>{connected?"WhatsApp sender connected":pairing?"Scan to connect WhatsApp":paused?"Connection paused":"Cloud sender waiting"}</strong>
+          <span>{loading?"Checking cloud worker…":connected?("Connected "+(status.phone_number||"sender number")+". Messages are sent by the scheduled cloud worker."):status.last_error||(pairing?"A QR code is ready to scan.":"The free cloud worker will display a QR code when its next run starts.")}</span>
         </div>
-        <span className="provider-status">{connected?"Connected":pairing?"Pair device":"Waiting"}</span>
+        <span className="provider-status">{connected?"Connected":pairing?"Pair device":paused?"Paused":"Waiting"}</span>
       </div>
       {pairing&&<div className="whatsapp-cloud-qr">
         <strong>Link your dedicated sender once</strong>
@@ -441,6 +446,7 @@ function WhatsAppCloudSettings({onClose,notify}) {
         <Button variant="ghost" onClick={()=>{setLoading(true);api("/api/admin/whatsapp/status").then(setStatus).catch(e=>setError(e.message)).finally(()=>setLoading(false));}}>Refresh status</Button>
       </div>
       <div className="whatsapp-cloud-warning"><ShieldCheck size={17}/><p>This connection uses an unofficial WhatsApp Web protocol, not Meta's official API. WhatsApp may restrict the sender account. Use only your dedicated sender number and send notifications only to people who have opted in. Avoid bulk or unsolicited messaging.</p></div>
+      </div>
     </div>
   </Modal>;
 }
@@ -543,6 +549,8 @@ function App() {
   const [listMode,setListMode]=useState(true);
   const [sidebarCollapsed,setSidebarCollapsed]=useState(false);
   const [filtersOpen,setFiltersOpen]=useState(false);
+  const [overviewFiltersOpen,setOverviewFiltersOpen]=useState(false);
+  const [overviewFilters,setOverviewFilters]=useState({status:"all",priority:"all",sort:"deadline"});
   const [range,setRange]=useState("7");
   const [customFrom,setCustomFrom]=useState(todayDhaka());
   const [customTo,setCustomTo]=useState(addDays(todayDhaka(),7));
@@ -555,7 +563,7 @@ function App() {
   const [completionNote,setCompletionNote]=useState("");
   const [activityItems,setActivityItems]=useState([]);
   const [activityOpen,setActivityOpen]=useState(false);
-  const [whatsAppSettingsOpen,setWhatsAppSettingsOpen]=useState(false);
+  const [settingsOpen,setSettingsOpen]=useState(false);
   const [activitySeenAt,setActivitySeenAt]=useState(()=>{try{return localStorage.getItem("taskxvs_activity_seen")||"";}catch{return "";}});
   const [completionBusy,setCompletionBusy]=useState(false);
   const [toast,setToast]=useState("");
@@ -676,7 +684,28 @@ function App() {
   });
   const overdueTasks=tasks.filter(t=>isOverdue(t,today)).sort((a,b)=>a.deadline.localeCompare(b.deadline));
   const progressPercent=0;
-  const overviewTasksSorted=[...overviewTasks].sort((a,b)=>(a.deadline||"9999-12-31").localeCompare(b.deadline||"9999-12-31"));
+  const overviewTasksSorted=useMemo(()=>{
+    let result=[...overviewTasks];
+    if(overviewFilters.status==="open")result=result.filter(t=>t.status==="todo"&&!isOverdue(t,today));
+    if(overviewFilters.status==="in_progress")result=result.filter(t=>t.status==="in_progress"&&!isOverdue(t,today));
+    if(overviewFilters.status==="delayed")result=result.filter(t=>isOverdue(t,today));
+    if(overviewFilters.status==="completed")result=result.filter(t=>t.status==="done");
+    if(overviewFilters.status==="urgent")result=result.filter(t=>isOpen(t)&&(t.priority==="urgent"||isDueSoon(t,today)));
+    if(overviewFilters.priority!=="all")result=result.filter(t=>t.priority===overviewFilters.priority);
+    const order={urgent:0,high:1,normal:2,low:3};
+    result.sort((a,b)=>{
+      if(overviewFilters.sort==="newest")return (b.created_at||"").localeCompare(a.created_at||"");
+      if(overviewFilters.sort==="oldest")return (a.created_at||"").localeCompare(b.created_at||"");
+      if(overviewFilters.sort==="updated")return (b.updated_at||"").localeCompare(a.updated_at||"");
+      if(overviewFilters.sort==="deadline_latest")return (b.deadline||"0000-01-01").localeCompare(a.deadline||"0000-01-01");
+      if(overviewFilters.sort==="priority_high")return (order[a.priority]??2)-(order[b.priority]??2);
+      if(overviewFilters.sort==="priority_low")return (order[b.priority]??2)-(order[a.priority]??2);
+      if(overviewFilters.sort==="title_az")return (a.title||"").localeCompare(b.title||"");
+      if(overviewFilters.sort==="title_za")return (b.title||"").localeCompare(a.title||"");
+      return (a.deadline||"9999-12-31").localeCompare(b.deadline||"9999-12-31");
+    });
+    return result;
+  },[overviewTasks,overviewFilters,today]);
   const urgentTasks=tasks.filter(t=>isDueSoon(t,today)|| (isOpen(t)&&t.priority==="urgent")).sort((a,b)=>(a.deadline||"9999").localeCompare(b.deadline||"9999"));
   const completedTasks=overviewTasks.filter(t=>t.status==="done");
   const openTasks=overviewTasks.filter(isOpen);
@@ -705,6 +734,8 @@ function App() {
   },[tasks,active,filters,today]);
 
   function clearFilters(){setFilters({category:"",status:"",priority:"",deadlineState:"",dueFrom:"",dueTo:"",createdFrom:"",createdTo:"",sort:"deadline"});}
+  function clearOverviewFilters(){setOverviewFilters({status:"all",priority:"all",sort:"deadline"});}
+  const overviewFilterCount=(overviewFilters.status!=="all"?1:0)+(overviewFilters.priority!=="all"?1:0);
   function taskCard(t,withBusiness=false){
     const b=businesses.find(x=>x.id===t.business_id),c=categories.find(x=>x.id===t.category_id);
     const canWrite=canWriteBusiness(t.business_id);
@@ -725,8 +756,8 @@ function App() {
   if(!authenticated)return <Login onLogin={login}/>;
   return <div className={`app-frame ${sidebarCollapsed?"app-collapsed":""}`}>
     <aside className={`sidebar ${mobileNav?"sidebar-open":""} ${sidebarCollapsed?"sidebar-collapsed":""}`}>
-      <div className="sidebar-brand-row"><Brand collapsed={sidebarCollapsed}/><IconButton label={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"} className="sidebar-collapse-toggle" onClick={()=>setSidebarCollapsed(v=>!v)}>{sidebarCollapsed?<ChevronRight size={18}/>:<ChevronLeft size={18}/>}</IconButton></div>
-      <label className="sidebar-search" title={sidebarCollapsed?"Search tasks":undefined}><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder={sidebarCollapsed?"Search":"Search tasks…"}/>{search&&<button type="button" aria-label="Clear search" onClick={()=>setSearch("")}><X size={14}/></button>}</label>
+      <div className="sidebar-brand-row"><Brand collapsed={sidebarCollapsed} onClick={()=>setSidebarCollapsed(v=>!v)}/></div>
+      {!sidebarCollapsed&&<label className="sidebar-search"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search tasks…"/>{search&&<button type="button" aria-label="Clear search" onClick={()=>setSearch("")}><X size={14}/></button>}</label>}
       <div className="sidebar-section-label">WORKSPACE</div>
       <button className={`sidebar-link sidebar-overview-link ${active==="overview"?"is-active":""}`} title="Overview" onClick={()=>tabTo("overview")}><span className="overview-bullet"><LayoutDashboard size={17}/></span><span>Overview</span></button>
       <div className="sidebar-business-heading">
@@ -739,6 +770,7 @@ function App() {
       <nav className="sidebar-business-list">{businesses.filter(b=>!b.archived).map(b=><button key={b.id} className={`sidebar-link ${active===b.id?"is-active":""}`} onClick={()=>tabTo(b.id)} title={b.name}><span className="business-bullet">{b.name.slice(0,1)}</span><span className="sidebar-business-name">{b.name}</span><span className="sidebar-count">{pendingFor(b.id)}</span></button>)}</nav>
       {canCreateBusiness&&<button className="sidebar-add-business" title="Add business" onClick={()=>setModal("businesses")}><Plus size={15}/><span>Add business</span></button>}
       <div className="sidebar-bottom">
+        {isOwner&&<button className="sidebar-link sidebar-admin-link" title="Settings" onClick={()=>setSettingsOpen(true)}><Settings2 size={17}/><span>Settings</span></button>}
         {isOwner&&<button className="sidebar-link sidebar-admin-link" title="Team access" onClick={()=>setModal("users")}><Users size={17}/><span>Team access</span></button>}
         <button type="button" className="owner-row owner-row-button" onClick={openAccount} title="My account"><div className="owner-avatar">{(sessionUser?.displayName||"X").slice(0,1).toUpperCase()}</div><div><strong>{sessionUser?.displayName||"User"}</strong><small>{isOwner?"Workspace owner":"Team member"}</small></div></button>
         <button className="sidebar-link logout-link" title="Sign out" onClick={logout}><LogOut size={16}/><span>Sign out</span></button>
@@ -755,7 +787,6 @@ function App() {
           </div>
         </nav>
         <div className="topbar-right">
-          {isOwner&&<button type="button" className="activity-trigger" aria-label="WhatsApp settings" title="WhatsApp settings" onClick={()=>setWhatsAppSettingsOpen(true)}><MessageCircle size={18}/></button>}
           {isOwner&&<button type="button" className="activity-trigger" aria-label="Workspace activity" title="Workspace activity" onClick={openActivity}><Bell size={18}/>{activityItems.filter(item=>!activitySeenAt||new Date(item.created_at).getTime()>Date.parse(activitySeenAt)).length>0&&<span>{activityItems.filter(item=>!activitySeenAt||new Date(item.created_at).getTime()>Date.parse(activitySeenAt)).length}</span>}</button>}
           {writableBusinesses.length>0&&<Button onClick={openNewTask}><Plus size={16}/> New task</Button>}
         </div>
@@ -783,11 +814,29 @@ function App() {
             <div className="progress-track"><i style={{width:overallProgress+"%"}}/></div>
           </div>
           <div className="overview-task-heading">
-            <strong>All tasks</strong><span>{overviewTasksSorted.length}</span><small>Overdue and completed tasks stay visible</small>
-            <div className="view-toggle"><button className={listMode?"selected":""} onClick={()=>setListMode(true)} aria-label="List view"><List size={16}/></button><button className={!listMode?"selected":""} onClick={()=>setListMode(false)} aria-label="Card view"><Grid2X2 size={16}/></button></div>
+            <strong>All tasks</strong><span>{overviewTasksSorted.length}</span>
+            <div className="overview-task-controls">
+              <div className="view-toggle"><button className={listMode?"selected":""} onClick={()=>setListMode(true)} aria-label="List view"><List size={16}/></button><button className={!listMode?"selected":""} onClick={()=>setListMode(false)} aria-label="Card view"><Grid2X2 size={16}/></button></div>
+              <button type="button" className={overviewFilterCount?"overview-filter-trigger is-active":"overview-filter-trigger"} aria-label="Filter and sort all tasks" title="Filter and sort all tasks" aria-expanded={overviewFiltersOpen} onClick={()=>setOverviewFiltersOpen(v=>!v)}><SlidersHorizontal size={17}/>{overviewFilterCount>0&&<span>{overviewFilterCount}</span>}</button>
+            </div>
           </div>
-          {loading?<div className="loading-block">Loading…</div>:overviewTasksSorted.length?<div className={listMode?"task-list-mode":"task-masonry"}>{overviewTasksSorted.map(t=>taskCard(t,true))}</div>:<EmptyState title="No tasks yet" description="Add a task to see it here." action={<Button onClick={openNewTask}><Plus size={15}/> Add task</Button>}/>}
-        </section> : selectedBusiness ? <section className="page-section">
+          {overviewFiltersOpen&&<div className="filters-panel overview-filters-panel">
+            <div className="filters-title"><div><SlidersHorizontal size={16}/><strong>Filter and sort tasks</strong></div><button type="button" onClick={clearOverviewFilters}>Clear all</button></div>
+            <div className="filters-grid overview-filters-grid">
+              <label className="filter-field"><span>Status</span><select value={overviewFilters.status} onChange={e=>setOverviewFilters(v=>({...v,status:e.target.value}))}><option value="all">All tasks</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="delayed">Delayed</option><option value="completed">Completed</option><option value="urgent">Urgent</option></select></label>
+              <label className="filter-field"><span>Priority</span><select value={overviewFilters.priority} onChange={e=>setOverviewFilters(v=>({...v,priority:e.target.value}))}><option value="all">Any priority</option><option value="urgent">Urgent</option><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option></select></label>
+              <label className="filter-field"><span>Sort by</span><select value={overviewFilters.sort} onChange={e=>setOverviewFilters(v=>({...v,sort:e.target.value}))}><option value="deadline">Deadline soonest</option><option value="deadline_latest">Deadline latest</option><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="updated">Recently updated</option><option value="priority_high">Priority: high to low</option><option value="priority_low">Priority: low to high</option><option value="title_az">Title: A to Z</option><option value="title_za">Title: Z to A</option></select></label>
+            </div>
+          </div>}
+          {loading ? (
+            <div className="loading-block">Loading…</div>
+          ) : overviewTasksSorted.length ? (
+            <div className={listMode?"task-list-mode":"task-masonry"}>{overviewTasksSorted.map(t=>taskCard(t,true))}</div>
+          ) : overviewTasks.length ? (
+            <EmptyState title="No tasks match these filters" description="Adjust the filters or clear them to see your tasks." action={<Button variant="secondary" onClick={clearOverviewFilters}>Clear filters</Button>}/>
+          ) : (
+            <EmptyState title="No tasks yet" description="Add a task to see it here." action={<Button onClick={openNewTask}><Plus size={15}/> Add task</Button>}/>
+          )}</section> : selectedBusiness ? <section className="page-section">
           <div className="business-hero business-hero-compact">
             <div className="business-summary"><strong>{tasks.filter(t=>t.business_id===active).length} tasks</strong><span>{progressFor(active).percent}% complete {selectedBusiness.permission==="read"&&" · Read only"}</span></div>
             <div className="business-actions">
@@ -826,7 +875,7 @@ function App() {
     {viewingTask&&<TaskDetails task={tasks.find(t=>t.id===viewingTask.id)||viewingTask} business={businesses.find(b=>b.id===viewingTask.business_id)} category={categories.find(c=>c.id===viewingTask.category_id)} today={today} canWrite={canWriteBusiness(viewingTask.business_id)} onClose={()=>setViewingTask(null)} onEdit={()=>{setEditingTask(tasks.find(t=>t.id===viewingTask.id)||viewingTask);setViewingTask(null);setModal("task");}} onComplete={()=>requestStatusChange(tasks.find(t=>t.id===viewingTask.id)||viewingTask,"done")}/>}
     {completingTask&&<CompleteTaskDialog task={completingTask} status={requestedStatus} note={completionNote} setNote={setCompletionNote} onCancel={()=>{setCompletingTask(null);setCompletionNote("");}} onConfirm={confirmCompletion} busy={completionBusy}/>}
     {activityOpen&&isOwner&&<ActivityFeed items={activityItems} onClose={()=>setActivityOpen(false)}/>}
-    {whatsAppSettingsOpen&&isOwner&&<WhatsAppCloudSettings onClose={()=>setWhatsAppSettingsOpen(false)} notify={notify}/>}
+    {settingsOpen&&isOwner&&<WorkspaceSettings onClose={()=>setSettingsOpen(false)} notify={notify} emailConfigured={emailConfigured}/>}
     {accountOpen&&<AccountSettings account={accountDetails||sessionUser} onClose={()=>setAccountOpen(false)} onSave={saveAccount}/>}
     {toast&&<div className="toast-message"><Check size={15}/>{toast}</div>}
   </div>;
