@@ -498,3 +498,12 @@ body { background: var(--bg); color: var(--ink); }
   .task-row-actions { grid-column: 2/-1; grid-row: 3; justify-content: flex-end; }
   .task-row-description { font-size: 9px; }
 }
+
+.app-frame.app-collapsed { grid-template-columns: 76px minmax(0,1fr); }
+.app-frame.app-collapsed .sidebar { width: 76px; padding-left: 10px; padding-right: 10px; }
+.app-frame.app-collapsed .sidebar .brand-lockup { padding-left: 0; padding-right: 0; }
+.app-frame.app-collapsed .sidebar .brand-symbol { margin: 0 auto; }
+.app-frame.app-collapsed .sidebar .sidebar-link { min-height: 42px; }
+.app-frame.app-collapsed .sidebar .business-bullet { margin: 0 auto; }
+.app-frame.app-collapsed .sidebar .logout-link { display: none; }
+@media (max-width: 900px) { .app-frame.app-collapsed { grid-template-columns: 1fr; } }
