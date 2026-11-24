@@ -278,7 +278,7 @@ function CategoryManager({business,categories,onClose,onAdd,onEdit,onDelete}) {
   </Modal>;
 }
 
-function BusinessManager({businesses,emailConfigured,onClose,onAdd,onRename,onArchive,onDelete}) {
+function BusinessManager({businesses,emailConfigured,canManage=true,onClose,onAdd,onRename,onArchive,onDelete}) {
   const [name,setName]=useState("");
   const [email,setEmail]=useState("");
   const [emailEnabled,setEmailEnabled]=useState(false);
@@ -291,32 +291,32 @@ function BusinessManager({businesses,emailConfigured,onClose,onAdd,onRename,onAr
   function edit(b){setEditing(b.id);setDraft({name:b.name,notification_email:b.notification_email||"",email_notifications:Boolean(b.email_notifications)});setError("");}
   async function saveEdit(e){e.preventDefault();setError("");try{await onRename(editing,draft);setEditing(null);}catch(err){setError(err.message);}}
   async function confirmDelete(e){e.preventDefault();if(confirmation.trim()!==deleting.name){setError("Enter the exact business name to confirm.");return;}try{await onDelete(deleting);setDeleting(null);setConfirmation("");setError("");}catch(err){setError(err.message);}}
-  return <Modal title="Businesses" subtitle="Manage business details and task notifications." onClose={onClose} wide>
-    {!emailConfigured&&<div className="email-setup-notice"><MailCheck size={17}/><span><strong>Email delivery not ready</strong><small>Verify shakilxvs.com in Resend DNS to start sending business notifications.</small></span></div>}
+  return <Modal title="Businesses" subtitle={canManage?"Manage business details and task notifications.":"Add a business to your workspace."} onClose={onClose} wide>
+    {canManage&&!emailConfigured&&<div className="email-setup-notice"><MailCheck size={17}/><span><strong>Email delivery not ready</strong><small>Verify shakilxvs.com in Resend DNS to start sending business notifications.</small></span></div>}
     <form className="business-create business-create-rich" onSubmit={add}>
       <div className="category-form-heading">Add a business</div>
       <div className="form-grid">
         <label className="field"><span>Business name</span><input value={name} onChange={e=>setName(e.target.value)} maxLength={60} placeholder="Business name" required/></label>
-        <label className="field"><span>Notification email(s)</span><input value={email} onChange={e=>setEmail(e.target.value)} placeholder="team@example.com"/></label>
+        {canManage&&<label className="field"><span>Notification email(s)</span><input value={email} onChange={e=>setEmail(e.target.value)} placeholder="team@example.com"/></label>}
       </div>
-      <label className="inline-check"><input type="checkbox" checked={emailEnabled} onChange={e=>setEmailEnabled(e.target.checked)}/> Email task activity for this business</label>
+      {canManage&&<label className="inline-check"><input type="checkbox" checked={emailEnabled} onChange={e=>setEmailEnabled(e.target.checked)}/> Email task activity for this business</label>}
       <div className="modal-actions"><Button disabled={!name.trim()}><Plus size={15}/> Add business</Button></div>
     </form>
     {error&&<div className="form-error">{error}</div>}
     <div className="business-manager-list business-manager-list-rich">{businesses.map(b=><div className="business-manager-row business-manager-row-rich" key={b.id}>
       <div className="business-avatar"><Building2 size={15}/></div>
       <div className="business-manager-name"><strong>{b.name}</strong><small>{b.archived?"Archived":b.notification_email||"No notification email"}{b.email_notifications?" · email on":""}</small></div>
-      <button className="mini-action" onClick={()=>edit(b)}><Pencil size={14}/> Edit</button>
-      <button className="mini-action" onClick={()=>onArchive(b)}>{b.archived?<RotateCcw size={14}/>:<Archive size={14}/>}</button>
-      <button className="mini-action danger-action" onClick={()=>{setDeleting(b);setConfirmation("");setError("");}}><Trash2 size={14}/></button>
-      {editing===b.id&&<form className="business-inline-edit" onSubmit={saveEdit}>
+      {canManage&&<button className="mini-action" onClick={()=>edit(b)}><Pencil size={14}/> Edit</button>}
+      {canManage&&<button className="mini-action" onClick={()=>onArchive(b)}>{b.archived?<RotateCcw size={14}/>:<Archive size={14}/>}</button>}
+      {canManage&&<button className="mini-action danger-action" onClick={()=>{setDeleting(b);setConfirmation("");setError("");}}><Trash2 size={14}/></button>}
+      {canManage&&editing===b.id&&<form className="business-inline-edit" onSubmit={saveEdit}>
         <label className="field"><span>Business name</span><input value={draft.name} onChange={e=>setDraft(d=>({...d,name:e.target.value}))} required/></label>
         <label className="field"><span>Notification email(s)</span><input value={draft.notification_email} onChange={e=>setDraft(d=>({...d,notification_email:e.target.value}))} placeholder="team@example.com"/></label>
         <label className="inline-check"><input type="checkbox" checked={draft.email_notifications} onChange={e=>setDraft(d=>({...d,email_notifications:e.target.checked}))}/> Send task notifications</label>
         <div className="modal-actions"><Button size="small" variant="ghost" type="button" onClick={()=>setEditing(null)}>Cancel</Button><Button size="small">Save</Button></div>
       </form>}
     </div>)}</div>
-    {deleting&&<Modal title={`Delete ${deleting.name}?`} subtitle="This permanently removes the business, its categories and tasks." onClose={()=>{setDeleting(null);setConfirmation("");}} wide>
+    {canManage&&deleting&&<Modal title={`Delete ${deleting.name}?`} subtitle="This permanently removes the business, its categories and tasks." onClose={()=>{setDeleting(null);setConfirmation("");}} wide>
       <form onSubmit={confirmDelete} className="delete-confirm-form">
         <p>Type <strong>{deleting.name}</strong> exactly to confirm deletion.</p>
         <label className="field"><span>Business name confirmation</span><input autoFocus value={confirmation} onChange={e=>setConfirmation(e.target.value)} placeholder={deleting.name}/></label>
@@ -445,6 +445,7 @@ function App() {
   const canWriteBusiness=id=>isOwner||businesses.find(b=>b.id===id)?.permission==="write";
   const activeCanWrite=active==="overview"?isOwner:canWriteBusiness(active);
   const writableBusinesses=businesses.filter(b=>!b.archived&&canWriteBusiness(b.id));
+  const canCreateBusiness=isOwner||writableBusinesses.length>0;
   const pendingFor = id => tasks.filter(t=>t.business_id===id&&isOpen(t)).length;
   const progressFor = id => {
     const related=tasks.filter(t=>t.business_id===id);
@@ -526,9 +527,9 @@ function App() {
       <label className="sidebar-search"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder={sidebarCollapsed?"Search":"Search tasks…"}/>{search&&<button type="button" aria-label="Clear search" onClick={()=>setSearch("")}><X size={14}/></button>}</label>
       <div className="sidebar-section-label">WORKSPACE</div>
       <button className={`sidebar-link ${active==="overview"?"is-active":""}`} onClick={()=>tabTo("overview")}><LayoutDashboard size={18}/><span>Overview</span></button>
-      <div className="sidebar-business-heading"><span>BUSINESSES</span>{isOwner&&<button onClick={()=>setModal("businesses")} aria-label="Add business"><Plus size={15}/></button>}</div>
+      <div className="sidebar-business-heading"><span>BUSINESSES</span>{canCreateBusiness&&<button onClick={()=>setModal("businesses")} aria-label="Add business"><Plus size={15}/></button>}</div>
       <nav className="sidebar-business-list">{businesses.filter(b=>!b.archived).map(b=><button key={b.id} className={`sidebar-link ${active===b.id?"is-active":""}`} onClick={()=>tabTo(b.id)} title={b.name}><span className="business-bullet">{b.name.slice(0,1)}</span><span className="sidebar-business-name">{b.name}</span><span className="sidebar-count">{pendingFor(b.id)}</span></button>)}</nav>
-      {isOwner&&<button className="sidebar-add-business" onClick={()=>setModal("businesses")}><Plus size={15}/><span>Add business</span></button>}
+      {canCreateBusiness&&<button className="sidebar-add-business" onClick={()=>setModal("businesses")}><Plus size={15}/><span>Add business</span></button>}
       <div className="sidebar-bottom">
         {isOwner&&<button className="sidebar-link sidebar-admin-link" onClick={()=>setModal("users")}><Users size={17}/><span>Team access</span></button>}
         <div className="owner-row"><div className="owner-avatar">{(sessionUser?.displayName||"X").slice(0,1).toUpperCase()}</div><div><strong>{sessionUser?.displayName||"User"}</strong><small>{isOwner?"Workspace owner":"Team member"}</small></div></div>
@@ -549,7 +550,7 @@ function App() {
           <div className="business-tabs-scroll">
             <button className={`business-tab ${active==="overview"&&!search?"tab-active":""}`} onClick={()=>tabTo("overview")}><LayoutDashboard size={16}/><span>Overview</span></button>
             {businesses.filter(b=>!b.archived).map(b=>{const p=progressFor(b.id);return <button key={b.id} title={`${b.name}: ${p.percent}% complete`} className={`business-tab ${active===b.id&&!search?"tab-active":""}`} onClick={()=>tabTo(b.id)}><span className="tab-label">{b.name}<span className="tab-counter">{pendingFor(b.id)}</span></span><span className="business-tab-progress"><i style={{width:p.percent+"%"}}/></span></button>})}
-            {isOwner&&<button className="business-tab tab-add" onClick={()=>setModal("businesses")}><Plus size={15}/><span>Business</span></button>}
+            {canCreateBusiness&&<button className="business-tab tab-add" onClick={()=>setModal("businesses")}><Plus size={15}/><span>Business</span></button>}
           </div>
           {isOwner&&<button className="manage-businesses" onClick={()=>setModal("businesses")}><Settings size={15}/><span>Manage</span></button>}
         </nav>
@@ -615,7 +616,7 @@ function App() {
     </main>
     {modal==="task"&&<TaskForm task={editingTask} businesses={writableBusinesses} categories={categories} defaultBusiness={active==="overview"?writableBusinesses[0]?.id:active} onClose={()=>setModal(null)} onSave={values=>editingTask?updateTask(editingTask,values):addTask(values)}/>}
     {modal==="categories"&&selectedBusiness&&activeCanWrite&&<CategoryManager business={selectedBusiness} categories={categories} onClose={()=>setModal(null)} onAdd={addCategory} onEdit={editCategory} onDelete={deleteCategory}/>}
-    {modal==="businesses"&&isOwner&&<BusinessManager businesses={businesses} emailConfigured={emailConfigured} onClose={()=>setModal(null)} onAdd={addBusiness} onRename={renameBusiness} onArchive={archiveBusiness} onDelete={deleteBusiness}/>}
+    {modal==="businesses"&&canCreateBusiness&&<BusinessManager businesses={businesses} emailConfigured={emailConfigured} canManage={isOwner} onClose={()=>setModal(null)} onAdd={addBusiness} onRename={renameBusiness} onArchive={archiveBusiness} onDelete={deleteBusiness}/>}
     {modal==="users"&&isOwner&&<UserManager users={users} businesses={businesses} onClose={()=>setModal(null)} onSave={saveUser} onDelete={deleteUser} onToggle={toggleUser}/>}
     {toast&&<div className="toast-message"><Check size={15}/>{toast}</div>}
   </div>;
