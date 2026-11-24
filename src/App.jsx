@@ -388,84 +388,59 @@ function UserManager({users,businesses,onClose,onSave,onDelete,onToggle}) {
   </Modal>;
 }
 
-function WhatsAppProviderSettings({onClose,notify}) {
-  const [status,setStatus]=useState({configured:false,enabled:false,accountValid:false,senderNumber:"+8801350588555"});
-  const [apiKey,setApiKey]=useState("");
-  const [senderNumber,setSenderNumber]=useState("+8801350588555");
+function WhatsAppCloudSettings({onClose,notify}) {
+  const [status,setStatus]=useState({status:"disconnected",connected:false,qr_data_url:""});
   const [loading,setLoading]=useState(true);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
   useEffect(()=>{
     let active=true;
-    api("/api/admin/whatsapp/provider").then(result=>{
-      if(!active)return;
-      setStatus(result);
-      if(result.senderNumber)setSenderNumber(result.senderNumber);
-    }).catch(err=>{if(active)setError(err.message);}).finally(()=>{if(active)setLoading(false);});
-    return ()=>{active=false;};
+    const refresh=()=>{
+      api("/api/admin/whatsapp/status").then(result=>{
+        if(active){setStatus(result);setError("");}
+      }).catch(err=>{if(active)setError(err.message);}).finally(()=>{if(active)setLoading(false);});
+    };
+    refresh();
+    const timer=setInterval(refresh,5000);
+    return ()=>{active=false;clearInterval(timer);};
   },[]);
-  async function connect(e){
-    e.preventDefault();setBusy(true);setError("");
+  async function test(){
+    setBusy(true);setError("");
     try{
-      const result=await api("/api/admin/whatsapp/provider",{method:"PUT",body:JSON.stringify({api_key:apiKey,sender_number:senderNumber,enabled:true})});
-      setStatus({configured:true,enabled:true,accountValid:true,senderNumber:result.senderNumber});
-      setApiKey("");
-      notify("TextMeFlow API key verified and saved securely.");
+      const result=await api("/api/admin/whatsapp/test",{method:"POST"});
+      notify(result.message||"Test message queued.");
     }catch(err){setError(err.message);}
     finally{setBusy(false);}
   }
-  async function toggle(){
-    setBusy(true);setError("");
-    try{const result=await api("/api/admin/whatsapp/provider",{method:"PATCH",body:JSON.stringify({enabled:!status.enabled})});setStatus(current=>({...current,...result}));}
-    catch(err){setError(err.message);}
-    finally{setBusy(false);}
-  }
-  async function test(){
-    setBusy(true);setError("");
-    try{const result=await api("/api/admin/whatsapp/test",{method:"POST"});notify(result.message||"Test message queued.");}
-    catch(err){setError(err.message);}
-    finally{setBusy(false);}
-  }
-  async function disconnect(){
-    setBusy(true);setError("");
-    try{await api("/api/admin/whatsapp/provider",{method:"DELETE"});setStatus({configured:false,enabled:false,accountValid:false,senderNumber});setApiKey("");notify("WhatsApp provider disconnected.");}
-    catch(err){setError(err.message);}
-    finally{setBusy(false);}
-  }
-  return <Modal title="WhatsApp notifications" subtitle="Connect your dedicated WhatsApp sender to TaskXVS." onClose={onClose} wide>
-    <div className="whatsapp-provider-settings">
-      <div className={status.configured&&status.accountValid?"whatsapp-provider-card connected":"whatsapp-provider-card pending"}>
-        <div className="whatsapp-provider-symbol"><MessageCircle size={21}/></div>
-        <div className="whatsapp-provider-copy">
-          <strong>{status.configured&&status.accountValid?"TextMeFlow API connected":"Connect TextMeFlow"}</strong>
-          <span>{loading?"Checking connection…":status.configured?(status.accountValid?"API key verified. The linked WhatsApp session must remain active.":"Saved key could not be verified. Check your TextMeFlow account."):"Free plan: 50 messages/month · 1 linked device"}</span>
+  const connected=status.status==="connected";
+  const pairing=status.status==="qr"&&Boolean(status.qr_data_url);
+  return <Modal title="WhatsApp notifications" subtitle="Connect the dedicated sender to the free TaskXVS cloud worker." onClose={onClose} wide>
+    <div className="whatsapp-cloud-settings">
+      <div className={connected?"whatsapp-cloud-card connected":"whatsapp-cloud-card pending"}>
+        <div className="whatsapp-cloud-symbol"><MessageCircle size={21}/></div>
+        <div className="whatsapp-cloud-copy">
+          <strong>{connected?"WhatsApp sender connected":pairing?"Scan to connect WhatsApp":"Cloud sender waiting"}</strong>
+          <span>{loading?"Checking cloud worker…":connected?("Connected "+(status.phone_number||"sender number")+". Messages are sent by the scheduled cloud worker."):(status.status==="error"||status.status==="logged_out")?(status.last_error||"The sender needs to be paired again."):"The free cloud worker will display a QR code when its next run starts."}</span>
         </div>
-        <span className="provider-status">{status.configured&&status.accountValid?"Connected":"Not connected"}</span>
+        <span className="provider-status">{connected?"Connected":pairing?"Pair device":"Waiting"}</span>
       </div>
-      <div className="whatsapp-provider-steps">
-        <strong>1. Create your free account</strong>
-        <p>Choose the Free plan. It includes 50 messages per month and one linked WhatsApp device, with no credit card required.</p>
-        <a href="https://textmeflow.eu/en/signup" target="_blank" rel="noreferrer">Create free TextMeFlow account <ArrowUpRight size={13}/></a>
-        <strong>2. Link your sender number</strong>
-        <p>In the TextMeFlow portal, open Connect WhatsApp and scan the QR code using the dedicated sender phone:</p>
-        <b>+880 1350588555</b>
-        <p>On the phone: WhatsApp → Linked devices → Link a device. Keep that phone connected to the internet.</p>
-        <strong>3. Copy the API key</strong>
-        <p>Copy the API key from the TextMeFlow portal. Paste it below. TaskXVS will verify it and encrypt it in the database. It will never be displayed again.</p>
+      {pairing&&<div className="whatsapp-cloud-qr">
+        <strong>Link your dedicated sender once</strong>
+        <p>Open WhatsApp on the sender phone, go to Linked devices, choose Link a device, then scan this QR code.</p>
+        <img src={status.qr_data_url} alt="WhatsApp device pairing QR code"/>
+        <small>The phone is only needed for pairing. It does not need to stay online after linking.</small>
+      </div>}
+      <div className="whatsapp-cloud-steps">
+        <strong>How this free setup works</strong>
+        <p>GitHub's free public-repository runner hosts the connection in scheduled sessions. Messages wait in the database queue and are sent when the worker is online.</p>
+        <p>There may be short gaps between sessions or when GitHub delays a scheduled run. This is not a guaranteed 24/7 connection.</p>
       </div>
-      <form className="whatsapp-provider-form" onSubmit={connect}>
-        <label className="field"><span>TextMeFlow API key {status.configured&&<i>Saved key stays hidden</i>}</span><input type="password" autoComplete="new-password" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder={status.configured?"Enter a new key to replace the saved key":"Paste your TextMeFlow API key"} required={!status.configured}/></label>
-        <label className="field"><span>WhatsApp sender number</span><input type="tel" inputMode="tel" value={senderNumber} onChange={e=>setSenderNumber(e.target.value)} placeholder="+8801350588555"/></label>
-        <p className="form-hint">Use international format. The API key is stored encrypted on the TaskXVS server, not in browser storage.</p>
-        {error&&<div className="form-error">{error}</div>}
-        <div className="modal-actions">
-          {status.configured&&<Button type="button" variant="ghost" onClick={disconnect} disabled={busy}>Disconnect</Button>}
-          {status.configured&&<Button type="button" variant="ghost" onClick={toggle} disabled={busy}>{status.enabled?"Pause notifications":"Enable notifications"}</Button>}
-          <Button disabled={busy||loading||(!apiKey.trim()&&!status.configured)}>{busy?"Verifying…":status.configured?"Replace API key":"Verify & connect"}</Button>
-        </div>
-      </form>
-      {status.configured&&status.accountValid&&status.enabled&&<div className="whatsapp-test-row"><div><strong>Send a test message</strong><span>Uses your saved personal WhatsApp contact and its opt-in setting.</span></div><Button variant="ghost" onClick={test} disabled={busy}><Send size={14}/> Send test</Button></div>}
-      <div className="whatsapp-provider-warning"><ShieldCheck size={17}/><p>Important: TextMeFlow is an independent, unofficial WhatsApp Web-based provider, not Meta's official API. WhatsApp may restrict the sender number. Use the dedicated number, notify only people who opted in, and avoid bulk or unsolicited messages. Free plan quota is 50 messages per month across all recipients.</p></div>
+      {error&&<div className="form-error">{error}</div>}
+      <div className="modal-actions">
+        {connected&&<Button variant="secondary" onClick={test} disabled={busy}>{busy?"Queueing…":"Send test message"} <Send size={14}/></Button>}
+        <Button variant="ghost" onClick={()=>{setLoading(true);api("/api/admin/whatsapp/status").then(setStatus).catch(e=>setError(e.message)).finally(()=>setLoading(false));}}>Refresh status</Button>
+      </div>
+      <div className="whatsapp-cloud-warning"><ShieldCheck size={17}/><p>This connection uses an unofficial WhatsApp Web protocol, not Meta's official API. WhatsApp may restrict the sender account. Use only your dedicated sender number and send notifications only to people who have opted in. Avoid bulk or unsolicited messaging.</p></div>
     </div>
   </Modal>;
 }
@@ -486,7 +461,7 @@ function AccountSettings({account,onClose,onSave}) {
       <div className="profile-account-summary"><span className="profile-account-icon"><UserRound size={19}/></span><div><strong>{account?.display_name||account?.displayName||account?.username||"Account"}</strong><small>@{account?.username||"owner"} · {account?.role==="owner"?"Workspace owner":"Team member"}</small></div></div>
       <label className="field"><span>WhatsApp contact number</span><input type="tel" inputMode="tel" autoComplete="tel" value={number} onChange={e=>setNumber(e.target.value)} placeholder="+8801XXXXXXXXX"/></label>
       <p className="form-hint">Include your country code. Example: +8801XXXXXXXXX.</p>
-      <div className={account?.whatsapp_configured?"whatsapp-connection-state connected":"whatsapp-connection-state pending"}>{account?.whatsapp_configured?<><CircleCheck size={16}/><span>TextMeFlow is connected. Notifications can be delivered when enabled and the linked sender session is online.</span></>:<><CircleAlert size={16}/><span>Your contact and opt-in will be saved now. WhatsApp delivery starts after the owner connects TextMeFlow in the header settings.</span></>}</div>
+      <div className={account?.whatsapp_configured?"whatsapp-connection-state connected":"whatsapp-connection-state pending"}>{account?.whatsapp_configured?<><CircleCheck size={16}/><span>The TaskXVS cloud sender is connected. Notifications can be delivered while its free worker session is online.</span></>:<><CircleAlert size={16}/><span>Your contact and opt-in will be saved now. Delivery starts after the owner pairs the dedicated sender with the TaskXVS cloud worker.</span></>}</div>
       <label className="inline-check"><input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)}/> I agree to receive TaskXVS WhatsApp notifications on this number</label>
       {error&&<div className="form-error">{error}</div>}
       <div className="modal-actions"><Button variant="ghost" type="button" onClick={onClose} disabled={busy}>Cancel</Button><Button disabled={busy}>{busy?"Saving…":"Save contact"}</Button></div>
@@ -851,7 +826,7 @@ function App() {
     {viewingTask&&<TaskDetails task={tasks.find(t=>t.id===viewingTask.id)||viewingTask} business={businesses.find(b=>b.id===viewingTask.business_id)} category={categories.find(c=>c.id===viewingTask.category_id)} today={today} canWrite={canWriteBusiness(viewingTask.business_id)} onClose={()=>setViewingTask(null)} onEdit={()=>{setEditingTask(tasks.find(t=>t.id===viewingTask.id)||viewingTask);setViewingTask(null);setModal("task");}} onComplete={()=>requestStatusChange(tasks.find(t=>t.id===viewingTask.id)||viewingTask,"done")}/>}
     {completingTask&&<CompleteTaskDialog task={completingTask} status={requestedStatus} note={completionNote} setNote={setCompletionNote} onCancel={()=>{setCompletingTask(null);setCompletionNote("");}} onConfirm={confirmCompletion} busy={completionBusy}/>}
     {activityOpen&&isOwner&&<ActivityFeed items={activityItems} onClose={()=>setActivityOpen(false)}/>}
-    {whatsAppSettingsOpen&&isOwner&&<WhatsAppProviderSettings onClose={()=>setWhatsAppSettingsOpen(false)} notify={notify}/>}
+    {whatsAppSettingsOpen&&isOwner&&<WhatsAppCloudSettings onClose={()=>setWhatsAppSettingsOpen(false)} notify={notify}/>}
     {accountOpen&&<AccountSettings account={accountDetails||sessionUser} onClose={()=>setAccountOpen(false)} onSave={saveAccount}/>}
     {toast&&<div className="toast-message"><Check size={15}/>{toast}</div>}
   </div>;
