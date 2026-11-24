@@ -410,40 +410,46 @@ app.post("/api/businesses", requireAuth, async (req, res, next) => {
   const client=await pool.connect();
   try {
     const name=String(req.body?.name||"").trim();
+    const email=String(req.body?.notification_email||"").trim()||null;
+    const emailEnabled=Boolean(req.body?.email_notifications);
     if(!name||name.length>60)return res.status(400).json({error:"Business name must be between 1 and 60 characters."});
-    let email=null,emailEnabled=false;
-    if(req.auth.role==="owner"){
-      email=String(req.body?.notification_email||"").trim()||null;
-      emailEnabled=Boolean(req.body?.email_notifications);
-      if(!validEmailList(email))return res.status(400).json({error:"Enter up to 10 valid notification email addresses separated by commas."});
-    }else{
+    if(!validEmailList(email))return res.status(400).json({error:"Enter up to 10 valid notification email addresses separated by commas."});
+    if(req.auth.role==="member"){
       const access=await client.query("SELECT 1 FROM business_assignments WHERE user_id=$1 AND permission='write' LIMIT 1",[req.auth.id]);
       if(!access.rowCount)return res.status(403).json({error:"Read & write access is required to create a business."});
     }
     await client.query("BEGIN");
     const created=await client.query(
-      "INSERT INTO businesses (name,notification_email,email_notifications,position) VALUES ($1,$2,$3,COALESCE((SELECT max(position)+1 FROM businesses),1)) RETURNING *",
-      [name,email,emailEnabled]
+      "INSERT INTO businesses (name,notification_email,email_notifications,created_by_user_id,position) VALUES ($1,$2,$3,$4,COALESCE((SELECT max(position)+1 FROM businesses),1)) RETURNING *",
+      [name,email,emailEnabled,req.auth.role==="member"?req.auth.id:null]
     );
     if(req.auth.role==="member"){
       await client.query("INSERT INTO business_assignments (user_id,business_id,permission) VALUES ($1,$2,'write')",[req.auth.id,created.rows[0].id]);
     }
     await client.query("COMMIT");
     res.status(201).json(created.rows[0]);
+    recordActivity(req,{event_type:"business_created",entity_type:"business",entity_id:created.rows[0].id,business_id:created.rows[0].id,title:`Created business ${name}`,details:{notification_email:email,email_notifications:emailEnabled}});
   }catch(e){
     await client.query("ROLLBACK");
     if(e.code==="23505")return res.status(409).json({error:"A business with that name already exists."});
     next(e);
   }finally{client.release();}
 });
-app.patch("/api/businesses/:id", requireAuth, requireOwner, async (req,res,next)=>{
+app.patch("/api/businesses/:id", requireAuth, async (req,res,next)=>{
   try{
+    const current=await pool.query("SELECT * FROM businesses WHERE id=$1",[req.params.id]);
+    if(!current.rowCount)return res.status(404).json({error:"Business not found."});
+    const business=current.rows[0];
+    const owner=req.auth.role==="owner";
+    const creator=req.auth.role==="member"&&String(business.created_by_user_id||"")===String(req.auth.id);
+    if(!owner&&!creator)return res.status(403).json({error:"Only the creator and workspace owner can edit this business."});
+    if(!owner&&!await requireBusinessAccess(req,res,business.id,true))return;
     const name=req.body?.name===undefined?null:String(req.body.name).trim();
     const email=req.body?.notification_email===undefined?null:(String(req.body.notification_email||"").trim()||null);
     const enabled=typeof req.body?.email_notifications==="boolean"?req.body.email_notifications:null;
     const archived=typeof req.body?.archived==="boolean"?req.body.archived:null;
     if(name!==null&&(!name||name.length>60))return res.status(400).json({error:"Business name must be between 1 and 60 characters."});
-    if(email!==null&&!validEmailList(email))return res.status(400).json({error:"Enter up to 10 valid notification email addresses."});
+    if(req.body?.notification_email!==undefined&&!validEmailList(email))return res.status(400).json({error:"Enter up to 10 valid notification email addresses."});
     const result=await pool.query(
       `UPDATE businesses SET name=COALESCE($2,name),
        notification_email=CASE WHEN $3::boolean THEN $4 ELSE notification_email END,
@@ -452,8 +458,9 @@ app.patch("/api/businesses/:id", requireAuth, requireOwner, async (req,res,next)
        WHERE id=$1 RETURNING *`,
       [req.params.id,name,req.body?.notification_email!==undefined,email,enabled,archived]
     );
-    if(!result.rowCount)return res.status(404).json({error:"Business not found."});
     res.json(result.rows[0]);
+    const eventType=typeof archived==="boolean"?(archived?"business_archived":"business_restored"):"business_updated";
+    recordActivity(req,{event_type:eventType,entity_type:"business",entity_id:business.id,business_id:business.id,title:`${eventType==="business_archived"?"Archived":eventType==="business_restored"?"Restored":"Updated"} business ${result.rows[0].name}`,details:{before:{name:business.name,notification_email:business.notification_email,email_notifications:business.email_notifications},after:{name:result.rows[0].name,notification_email:result.rows[0].notification_email,email_notifications:result.rows[0].email_notifications}}});
   }catch(e){
     if(e.code==="23505")return res.status(409).json({error:"A business with that name already exists."});
     next(e);
@@ -461,9 +468,11 @@ app.patch("/api/businesses/:id", requireAuth, requireOwner, async (req,res,next)
 });
 app.delete("/api/businesses/:id", requireAuth, requireOwner, async (req,res,next)=>{
   try{
-    const result=await pool.query("DELETE FROM businesses WHERE id=$1 RETURNING id",[req.params.id]);
-    if(!result.rowCount)return res.status(404).json({error:"Business not found."});
+    const current=await pool.query("SELECT id,name FROM businesses WHERE id=$1",[req.params.id]);
+    if(!current.rowCount)return res.status(404).json({error:"Business not found."});
+    await pool.query("DELETE FROM businesses WHERE id=$1",[req.params.id]);
     res.json({ok:true});
+    recordActivity(req,{event_type:"business_deleted",entity_type:"business",entity_id:current.rows[0].id,business_id:current.rows[0].id,title:`Deleted business ${current.rows[0].name}`,details:{}});
   }catch(e){next(e);}
 });
 
