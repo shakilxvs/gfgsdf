@@ -16,6 +16,7 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const RUN_MINUTES = Math.max(10, Number(process.env.WHATSAPP_WORKER_MINUTES || 345));
 const RUN_UNTIL = Date.now() + RUN_MINUTES * 60_000;
 const QUEUE_POLL_INTERVAL_MS = 20 * 60 * 1000;
+const TASKXVS_BASE_URL = process.env.TASKXVS_BASE_URL || "https://task.shakilxvs.com";
 const logger = pino({ level: "silent" });
 
 if (!DATABASE_URL) {
@@ -150,6 +151,34 @@ async function claimQueueBatch() {
   }
 }
 
+let lastDeadlineSweepAt=0;
+async function triggerOwnerDeadlineReminderSweep(force=false){
+  if(!force&&Date.now()-lastDeadlineSweepAt<QUEUE_POLL_INTERVAL_MS)return;
+  lastDeadlineSweepAt=Date.now();
+  try{
+    const result=await pool.query("SELECT token FROM whatsapp_gateway.scheduler_token WHERE id=true LIMIT 1");
+    const token=result.rows[0]?.token;
+    if(!token){
+      logger.warn("Owner reminder scheduler token is not configured.");
+      return;
+    }
+    const response=await fetch(`${TASKXVS_BASE_URL}/api/internal/notifications/deadlines`,{
+      method:"POST",
+      headers:{"Content-Type":"application/json","x-taskxvs-scheduler-token":token},
+      body:"{}",
+      signal:AbortSignal.timeout(20000)
+    });
+    if(!response.ok){
+      const body=(await response.text()).slice(0,250);
+      logger.warn({status:response.status,body},"Owner deadline reminder check could not reach TaskXVS");
+      return;
+    }
+    logger.info("Owner deadline reminder check completed");
+  }catch(error){
+    logger.warn({error:error.message},"Owner deadline reminder handoff failed");
+  }
+}
+
 async function processQueue(socket, isConnected) {
   if (!isConnected()) return false;
   const items = await claimQueueBatch();
@@ -252,6 +281,7 @@ async function runSocketSession() {
   });
 
   while (Date.now() < RUN_UNTIL && !closed) {
+    await triggerOwnerDeadlineReminderSweep();
     if (connected) {
       const hadMessages = await processQueue(socket, () => connected && !closed);
       await pool.query(
@@ -274,6 +304,8 @@ async function main() {
   await pool.query("SELECT 1 FROM whatsapp_gateway.gateway_state LIMIT 1");
   await pool.query("SELECT 1 FROM whatsapp_gateway.auth_kv LIMIT 1");
   await pool.query("SELECT 1 FROM whatsapp_gateway.outbound_queue LIMIT 1");
+  await pool.query("SELECT 1 FROM whatsapp_gateway.scheduler_token LIMIT 1");
+
   await pool.query(
     "UPDATE whatsapp_gateway.outbound_queue SET status='queued',updated_at=now() WHERE status='sending' AND updated_at < now() - interval '10 minutes'"
   );
