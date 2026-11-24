@@ -139,7 +139,7 @@ function Login({onLogin}) {
       <div className="login-copy"><span className="eyebrow">SHAKILXVS WORKSPACE</span><h1>Welcome back.</h1><p>One workspace for all your businesses.</p></div>
       <form onSubmit={submit} className="login-form">
         <label className="field"><span>Login ID</span><div className="input-with-icon"><BriefcaseBusiness size={16}/><input value={username} onChange={e=>setUsername(e.target.value)} autoComplete="username" required /></div></label>
-        <label className="field"><span>Password</span><div className="input-with-icon"><Lock size={15}/><input type={show?"text":"password"} value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" required/><button type="button" className="reveal-button" onClick={()=>setShow(v=>!v)} aria-label={show?"Hide password":"Show password"}><Eye size={16}/></button></div></label>
+        <label className="field"><span>Password</span><div className="input-with-icon"><Lock size={15}/><input type={show?"text":"password"} value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" minLength={4} required/><button type="button" className="reveal-button" onClick={()=>setShow(v=>!v)} aria-label={show?"Hide password":"Show password"}><Eye size={16}/></button></div></label>
         {error && <div className="login-error" role="alert"><AlertCircle size={15}/>{error}</div>}
         <Button className="login-submit" disabled={busy}>{busy?"Signing in…":<>Sign in <ArrowUpRight size={16}/></>}</Button>
       </form>
@@ -364,7 +364,7 @@ function UserManager({users,businesses,onClose,onSave,onDelete,onToggle}) {
         <label className="field"><span>Username</span><input value={username} onChange={e=>setUsername(e.target.value)} disabled={Boolean(editing)} minLength={3} maxLength={40} required/></label>
         <label className="field"><span>Display name</span><input value={displayName} onChange={e=>setDisplayName(e.target.value)} maxLength={80} required/></label>
         <label className="field"><span>Email (optional)</span><input type="email" value={email} onChange={e=>setEmail(e.target.value)}/></label>
-        <label className="field"><span>{editing?"New password (leave blank to keep current)":"Password (minimum 12 characters)"}</span><input type="password" value={password} onChange={e=>setPassword(e.target.value)} minLength={editing?0:12} required={!editing} autoComplete="new-password"/></label>
+        <label className="field"><span>{editing?"New password (leave blank to keep current)":"Password (minimum 4 characters)"}</span><input type="password" value={password} onChange={e=>setPassword(e.target.value)} minLength={4} required={!editing} autoComplete="new-password"/></label>
       </div>
       <div className="assignment-heading">Business access</div>
       <div className="assignment-list">{businesses.map(b=><div className="assignment-row" key={b.id}>
@@ -527,7 +527,13 @@ function App() {
       <label className="sidebar-search"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder={sidebarCollapsed?"Search":"Search tasks…"}/>{search&&<button type="button" aria-label="Clear search" onClick={()=>setSearch("")}><X size={14}/></button>}</label>
       <div className="sidebar-section-label">WORKSPACE</div>
       <button className={`sidebar-link ${active==="overview"?"is-active":""}`} onClick={()=>tabTo("overview")}><LayoutDashboard size={18}/><span>Overview</span></button>
-      <div className="sidebar-business-heading"><span>BUSINESSES</span>{canCreateBusiness&&<button onClick={()=>setModal("businesses")} aria-label="Add business"><Plus size={15}/></button>}</div>
+      <div className="sidebar-business-heading">
+        <span>BUSINESSES</span>
+        <div className="sidebar-business-tools">
+          {isOwner&&<button className="sidebar-manage-businesses" onClick={()=>setModal("businesses")} aria-label="Manage businesses"><Settings2 size={14}/><span>Manage</span></button>}
+          {canCreateBusiness&&<button className="sidebar-business-add" onClick={()=>setModal("businesses")} aria-label="Add business"><Plus size={16}/></button>}
+        </div>
+      </div>
       <nav className="sidebar-business-list">{businesses.filter(b=>!b.archived).map(b=><button key={b.id} className={`sidebar-link ${active===b.id?"is-active":""}`} onClick={()=>tabTo(b.id)} title={b.name}><span className="business-bullet">{b.name.slice(0,1)}</span><span className="sidebar-business-name">{b.name}</span><span className="sidebar-count">{pendingFor(b.id)}</span></button>)}</nav>
       {canCreateBusiness&&<button className="sidebar-add-business" onClick={()=>setModal("businesses")}><Plus size={15}/><span>Add business</span></button>}
       <div className="sidebar-bottom">
@@ -539,21 +545,16 @@ function App() {
     {mobileNav&&<button className="mobile-scrim" onClick={()=>setMobileNav(false)} aria-label="Close menu"/>}
     <main className="main-area">
       <header className="topbar">
-        <div className="topbar-main">
-          <div className="topbar-left"><IconButton label="Open menu" className="mobile-menu-button" onClick={()=>setMobileNav(true)}><Menu size={18}/></IconButton><span className="header-workspace-label">TASKXVS <small>SHAKILXVS</small></span></div>
-          <div className="topbar-right">
-            {writableBusinesses.length>0&&<Button onClick={openNewTask}><Plus size={16}/> New task</Button>}
-            <div className="header-user"><span>{(sessionUser?.displayName||"X").slice(0,1).toUpperCase()}</span></div>
-          </div>
-        </div>
+        <IconButton label="Open menu" className="mobile-menu-button" onClick={()=>setMobileNav(true)}><Menu size={18}/></IconButton>
         <nav className="business-tabs" aria-label="Business workspaces">
           <div className="business-tabs-scroll">
-            <button className={`business-tab ${active==="overview"&&!search?"tab-active":""}`} onClick={()=>tabTo("overview")}><LayoutDashboard size={16}/><span>Overview</span></button>
-            {businesses.filter(b=>!b.archived).map(b=>{const p=progressFor(b.id);return <button key={b.id} title={`${b.name}: ${p.percent}% complete`} className={`business-tab ${active===b.id&&!search?"tab-active":""}`} onClick={()=>tabTo(b.id)}><span className="tab-label">{b.name}<span className="tab-counter">{pendingFor(b.id)}</span></span><span className="business-tab-progress"><i style={{width:p.percent+"%"}}/></span></button>})}
-            {canCreateBusiness&&<button className="business-tab tab-add" onClick={()=>setModal("businesses")}><Plus size={15}/><span>Business</span></button>}
+            <button className={`business-tab ${active==="overview"&&!search?"tab-active":""}`} onClick={()=>tabTo("overview")}><LayoutDashboard size={17}/><span>Overview</span></button>
+            {businesses.filter(b=>!b.archived).map(b=><button key={b.id} title={b.name} className={`business-tab ${active===b.id&&!search?"tab-active":""}`} onClick={()=>tabTo(b.id)}><span className="tab-label">{b.name}<span className="tab-counter">{pendingFor(b.id)}</span></span></button>)}
           </div>
-          {isOwner&&<button className="manage-businesses" onClick={()=>setModal("businesses")}><Settings size={15}/><span>Manage</span></button>}
         </nav>
+        <div className="topbar-right">
+          {writableBusinesses.length>0&&<Button onClick={openNewTask}><Plus size={16}/> New task</Button>}
+        </div>
       </header>
       <div className="main-scroll">
 
@@ -587,7 +588,7 @@ function App() {
             <div className="business-summary"><strong>{tasks.filter(t=>t.business_id===active).length} tasks</strong><span>{progressFor(active).percent}% complete {selectedBusiness.permission==="read"&&" · Read only"}</span></div>
             <div className="business-actions">
               <div className="view-toggle"><button className={listMode?"selected":""} onClick={()=>setListMode(true)} aria-label="List view"><List size={16}/></button><button className={!listMode?"selected":""} onClick={()=>setListMode(false)} aria-label="Card view"><Grid2X2 size={16}/></button></div>
-              {activeCanWrite&&<IconButton label="Filters" className={`filter-toggle ${activeFilterCount?"filter-active":""}`} onClick={()=>setFiltersOpen(v=>!v)}><Filter size={17}/>{activeFilterCount>0&&<span>{activeFilterCount}</span>}</IconButton>}
+              {activeCanWrite&&<button type="button" className={`filter-trigger ${activeFilterCount?"filter-active":""}`} onClick={()=>setFiltersOpen(v=>!v)}><SlidersHorizontal size={16}/><span>Filters</span>{activeFilterCount>0&&<b>{activeFilterCount}</b>}</button>}
               {activeCanWrite&&<Button variant="secondary" onClick={()=>setModal("categories")}><Tag size={15}/> Categories</Button>}
               {activeCanWrite&&<Button onClick={openNewTask}><Plus size={16}/> Add task</Button>}
             </div>
