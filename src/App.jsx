@@ -646,6 +646,7 @@ function App() {
           </div>
         </nav>
         <div className="topbar-right">
+          {isOwner&&<button type="button" className="activity-trigger" aria-label="Workspace activity" title="Workspace activity" onClick={openActivity}><Bell size={18}/>{activityItems.filter(item=>!activitySeenAt||new Date(item.created_at).getTime()>Date.parse(activitySeenAt)).length>0&&<span>{activityItems.filter(item=>!activitySeenAt||new Date(item.created_at).getTime()>Date.parse(activitySeenAt)).length}</span>}</button>}
           {writableBusinesses.length>0&&<Button onClick={openNewTask}><Plus size={16}/> New task</Button>}
         </div>
       </header>
@@ -710,10 +711,11 @@ function App() {
     </main>
     {modal==="task"&&<TaskForm task={editingTask} businesses={writableBusinesses} categories={categories} defaultBusiness={active==="overview"?writableBusinesses[0]?.id:active} onClose={()=>setModal(null)} onSave={values=>editingTask?updateTask(editingTask,values):addTask(values)}/>}
     {modal==="categories"&&selectedBusiness&&activeCanWrite&&<CategoryManager business={selectedBusiness} categories={categories} onClose={()=>setModal(null)} onAdd={addCategory} onEdit={editCategory} onDelete={deleteCategory}/>}
-    {modal==="businesses"&&canCreateBusiness&&<BusinessManager businesses={businesses} emailConfigured={emailConfigured} canManage={isOwner} onClose={()=>setModal(null)} onAdd={addBusiness} onRename={renameBusiness} onArchive={archiveBusiness} onDelete={deleteBusiness}/>}
+    {modal==="businesses"&&canCreateBusiness&&<BusinessManager businesses={businesses} emailConfigured={emailConfigured} isOwner={isOwner} currentUserId={sessionUser?.id} onClose={()=>setModal(null)} onAdd={addBusiness} onRename={renameBusiness} onArchive={archiveBusiness} onDelete={deleteBusiness}/>}
     {modal==="users"&&isOwner&&<UserManager users={users} businesses={businesses} onClose={()=>setModal(null)} onSave={saveUser} onDelete={deleteUser} onToggle={toggleUser}/>}
     {viewingTask&&<TaskDetails task={tasks.find(t=>t.id===viewingTask.id)||viewingTask} business={businesses.find(b=>b.id===viewingTask.business_id)} category={categories.find(c=>c.id===viewingTask.category_id)} today={today} canWrite={canWriteBusiness(viewingTask.business_id)} onClose={()=>setViewingTask(null)} onEdit={()=>{setEditingTask(tasks.find(t=>t.id===viewingTask.id)||viewingTask);setViewingTask(null);setModal("task");}} onComplete={()=>requestStatusChange(tasks.find(t=>t.id===viewingTask.id)||viewingTask,"done")}/>}
-    {completingTask&&<CompleteTaskDialog task={completingTask} note={completionNote} setNote={setCompletionNote} onCancel={()=>{setCompletingTask(null);setCompletionNote("");}} onConfirm={confirmCompletion} busy={completionBusy}/>}
+    {completingTask&&<CompleteTaskDialog task={completingTask} status={requestedStatus} note={completionNote} setNote={setCompletionNote} onCancel={()=>{setCompletingTask(null);setCompletionNote("");}} onConfirm={confirmCompletion} busy={completionBusy}/>}
+    {activityOpen&&isOwner&&<ActivityFeed items={activityItems} onClose={()=>setActivityOpen(false)}/>}
     {toast&&<div className="toast-message"><Check size={15}/>{toast}</div>}
   </div>;
 }
