@@ -371,7 +371,7 @@ function UserManager({users,businesses,onClose,onSave,onDelete,onToggle}) {
         <label><input type="checkbox" checked={Boolean(assignments[b.id])} onChange={e=>setPermission(b.id,e.target.checked?"read":null)}/><span>{b.name}</span></label>
         <select value={assignments[b.id]||""} disabled={!assignments[b.id]} onChange={e=>setPermission(b.id,e.target.value)}><option value="read">Read only</option><option value="write">Read & write</option></select>
       </div>)}</div>
-      <p className="form-hint">Read only means view tasks. Read & write allows task and category changes in assigned businesses.</p>
+      <p className="form-hint">Read is view-only. Read & write allows task and category changes, plus creating new businesses.</p>
       {error&&<div className="form-error">{error}</div>}
       <div className="modal-actions">{editing&&<Button variant="ghost" type="button" onClick={reset}>Cancel edit</Button>}<Button disabled={busy}>{busy?"Saving…":editing?"Save member":"Create member"} <UserPlus size={15}/></Button></div>
     </form>
