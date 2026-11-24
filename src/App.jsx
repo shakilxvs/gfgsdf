@@ -96,7 +96,7 @@ async function api(path, options={}) {
 }
 
 function Brand({collapsed=false}) {
-  return <div className="brand-lockup"><div className="brand-symbol">X</div>{!collapsed&&<div><div className="brand-name">TASKXVS</div><div className="brand-caption">SHAKILXVS WORKSPACE</div></div>}</div>;
+  return <div className="brand-lockup"><div className="brand-symbol">X</div>{!collapsed&&<div className="brand-name">TASKXVS</div>}</div>;
 }
 function Button({children, variant="primary", size="normal", className="", ...props}) {
   return <button className={`button button-${variant} button-${size} ${className}`} {...props}>{children}</button>;
@@ -136,7 +136,7 @@ function Login({onLogin}) {
   return <main className="login-screen">
     <div className="login-panel">
       <div className="login-brand"><div className="login-mark">X</div><div className="login-wordmark">TASKXVS</div></div>
-      <div className="login-copy"><span className="eyebrow">SHAKILXVS WORKSPACE</span><h1>Welcome back.</h1><p>One workspace for all your businesses.</p></div>
+      <div className="login-copy"><h1>Welcome back.</h1><p>One workspace for all your businesses.</p></div>
       <form onSubmit={submit} className="login-form">
         <label className="field"><span>Login ID</span><div className="input-with-icon"><BriefcaseBusiness size={16}/><input value={username} onChange={e=>setUsername(e.target.value)} autoComplete="username" required /></div></label>
         <label className="field"><span>Password</span><div className="input-with-icon"><Lock size={15}/><input type={show?"text":"password"} value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" minLength={4} required/><button type="button" className="reveal-button" onClick={()=>setShow(v=>!v)} aria-label={show?"Hide password":"Show password"}><Eye size={16}/></button></div></label>
@@ -149,7 +149,7 @@ function Login({onLogin}) {
   </main>;
 }
 
-function TaskCard({task, category, business, today, onEdit, onDelete, onStatus, canWrite=true}) {
+function TaskCard({task, category, business, today, onEdit, onDelete, onStatus, onView, canWrite=true}) {
   const Icon = ICONS[category?.icon] || Tag;
   const overdue = isOverdue(task,today);
   const urgent = isDueSoon(task,today);
@@ -160,13 +160,14 @@ function TaskCard({task, category, business, today, onEdit, onDelete, onStatus, 
       </div>
       {canWrite&&<div className="task-menu"><IconButton label="Edit task" onClick={onEdit}><Pencil size={15}/></IconButton><IconButton label="Delete task" onClick={onDelete}><MoreHorizontal size={17}/></IconButton></div>}
     </div>
-    <div className="task-title-line">{canWrite&&<button className={`complete-control ${task.status==="done"?"complete-checked":""}`} aria-label={task.status==="done"?"Reopen task":"Mark complete"} onClick={()=>onStatus(task.status==="done"?"todo":"done")}>{task.status==="done"&&<Check size={13}/>}</button>}<h3>{task.title}</h3></div>
+    <div className="task-title-line" role="button" tabIndex={0} onClick={onView} onKeyDown={e=>{if(e.target===e.currentTarget&&(e.key==="Enter"||e.key===" ")){e.preventDefault();onView();}}}>{canWrite&&<button className={`complete-control ${task.status==="done"?"complete-checked":""}`} aria-label={task.status==="done"?"Reopen task":"Mark complete"} onClick={e=>{e.stopPropagation();onStatus(task.status==="done"?"todo":"done");}}>{task.status==="done"&&<Check size={13}/>}</button>}<h3>{task.title}</h3></div>
     {task.description && <p className="task-description">{task.description}</p>}
     <div className="task-badges">
       {canWrite?<select className={`status-select status-${task.status} ${overdue?"status-delayed":""}`} value={overdue?"delayed":task.status} onChange={e=>onStatus(e.target.value)} aria-label="Change task status">{overdue&&<option value="delayed" disabled>Delayed</option>}{STATUSES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select>:<span className={`task-card-status ${overdue?"status-delayed":task.status==="done"?"status-done":task.status==="in_progress"?"status-progress":"status-todo"}`}>{displayStatus(task,today)}</span>}
       {task.priority!=="normal" && <span className={`priority-chip priority-${task.priority}`}>{priorityLabel(task.priority)} priority</span>}
       {task.deadline && <DeadlineView value={task.deadline} today={today}/>}
     </div>
+    {task.status==="done"&&task.completion_note&&<p className="task-completion-note"><strong>Completion note</strong> {task.completion_note}</p>}
     <div className="task-card-foot"><span><CalendarDays size={13}/>Created {formatDate(task.created_date)}</span>{task.deadline && <span>Due {formatDate(task.deadline,true)}</span>}</div>
   </article>;
 }
@@ -182,24 +183,25 @@ function DeadlineView({value,today}) {
     <span className="deadline-copy"><strong>{formatDate(value,true)}</strong><small>{days<0?`${Math.abs(days)}d late`:days===0?"Due today":days===1?"Tomorrow":`${days} days left`}</small></span>
   </div>;
 }
-function TaskListRow({task,category,business,today,onEdit,onDelete,onStatus,canWrite=true}) {
+function TaskListRow({task,category,business,today,onEdit,onDelete,onStatus,onView,canWrite=true}) {
   const Icon=ICONS[category?.icon]||Tag;
   const delayed=isOverdue(task,today);
   const statusText=displayStatus(task,today);
-  return <article className={`task-row ${task.status==="done"?"task-done":""}`}>
+  return <article className={`task-row ${task.status==="done"?"task-done":""}`} role="button" tabIndex={0} onClick={onView} onKeyDown={e=>{if(e.target===e.currentTarget&&(e.key==="Enter"||e.key===" ")){e.preventDefault();onView();}}} title="Open task details">
     <span className="task-row-category" title={category?.name||"Uncategorized"} style={{"--chip-color":category?.color||"#d97737"}}><Icon size={20}/></span>
     <div className="task-row-main">
       <div className="task-row-title-line"><h3>{task.title}</h3>{business&&<span className="task-row-business">{business.name}</span>}</div>
       {task.description&&<p className="task-row-description">{task.description}</p>}
+      {task.status==="done"&&task.completion_note&&<p className="task-row-completion-note"><strong>Completion note:</strong> {task.completion_note}</p>}
     </div>
     <div className="task-row-deadline"><span className="deadline-label">DEADLINE</span><DeadlineView value={task.deadline} today={today}/></div>
-    {canWrite?<div className="task-row-actions">
-      <select className={delayed?"task-status-select status-delayed":""} value={delayed?"delayed":task.status} onChange={e=>onStatus(e.target.value)} aria-label="Change task status">
+    {canWrite?<div className="task-row-actions" onClick={e=>e.stopPropagation()}>
+      <select className={delayed?"task-status-select status-delayed":""} value={delayed?"delayed":task.status} onChange={e=>onStatus(e.target.value)} onClick={e=>e.stopPropagation()} aria-label="Change task status">
         {delayed&&<option value="delayed" disabled>Delayed</option>}
         <option value="todo">To do</option><option value="in_progress">In progress</option><option value="done">Done</option>
       </select>
-      <IconButton label="Edit task" onClick={onEdit}><Pencil size={16}/></IconButton>
-      <IconButton label="Delete task" onClick={onDelete}><Trash2 size={16}/></IconButton>
+      <IconButton label="Edit task" onClick={e=>{e.stopPropagation();onEdit();}}><Pencil size={16}/></IconButton>
+      <IconButton label="Delete task" onClick={e=>{e.stopPropagation();onDelete();}}><Trash2 size={16}/></IconButton>
     </div>:<span className={`task-status-readonly ${delayed?"status-delayed":""}`}>{statusText}</span>}
   </article>;
 }
@@ -236,7 +238,7 @@ function TaskForm({task,businesses,categories,defaultBusiness,onClose,onSave}) {
       <div className="form-grid">
         <label className="field"><span>Business</span><select value={draft.business_id} onChange={e=>set("business_id",e.target.value)} required>{businesses.filter(b=>!b.archived).map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
         <label className="field"><span>Category</span><select value={draft.category_id} onChange={e=>set("category_id",e.target.value)}><option value="">Uncategorized</option>{available.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-        <label className="field"><span>Status</span><select value={draft.status} onChange={e=>set("status",e.target.value)}>{STATUSES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select></label>
+        <label className="field"><span>Status</span><select value={draft.status} onChange={e=>set("status",e.target.value)}>{STATUSES.map(s=><option key={s.value} value={s.value} disabled={s.value==="done"&&(!task||task.status!=="done")}>{s.value==="done"&&(!task||task.status!=="done")?"Done (confirm from task list)":s.label}</option>)}</select></label>
         <label className="field"><span>Priority</span><select value={draft.priority} onChange={e=>set("priority",e.target.value)}>{PRIORITIES.map(p=><option key={p.value} value={p.value}>{p.label}</option>)}</select></label>
         <label className="field"><span>Created date</span><input type="date" value={draft.created_date} onChange={e=>set("created_date",e.target.value)}/></label>
         <label className="field"><span>Start date <i>Optional</i></span><input type="date" value={draft.start_date} onChange={e=>set("start_date",e.target.value)}/></label>
@@ -381,6 +383,37 @@ function UserManager({users,businesses,onClose,onSave,onDelete,onToggle}) {
   </Modal>;
 }
 
+function TaskDetails({task,business,category,today,canWrite,onClose,onEdit,onComplete}) {
+  const status=displayStatus(task,today);
+  const completed=task.completed_at?new Date(task.completed_at).toLocaleString("en-GB",{dateStyle:"medium",timeStyle:"short"}):"Not completed";
+  return <Modal title="Task details" subtitle={business?.name||"Workspace task"} onClose={onClose} wide>
+    <div className="task-detail-content">
+      <div className="task-detail-heading"><div><h2>{task.title}</h2><p>{task.description||"No description added."}</p></div><span className={`task-detail-status ${task.status==="done"?"is-done":isOverdue(task,today)?"is-delayed":task.status==="in_progress"?"is-progress":""}`}>{status}</span></div>
+      <div className="task-detail-grid">
+        <div><span>Business</span><strong>{business?.name||"Unavailable"}</strong></div>
+        <div><span>Category</span><strong>{category?.name||"Uncategorized"}</strong></div>
+        <div><span>Priority</span><strong>{priorityLabel(task.priority)}</strong></div>
+        <div><span>Created</span><strong>{formatDate(task.created_date,true)}</strong></div>
+        <div><span>Start date</span><strong>{formatDate(task.start_date,true)}</strong></div>
+        <div><span>Deadline</span><strong>{formatDate(task.deadline,true)}</strong></div>
+        <div><span>Completed</span><strong>{completed}</strong></div>
+      </div>
+      {task.notes&&<section className="task-detail-section"><h3>Task notes</h3><p>{task.notes}</p></section>}
+      {task.completion_note&&<section className="task-detail-section task-detail-completion"><h3><CheckCheck size={15}/> Completion note</h3><p>{task.completion_note}</p></section>}
+      <div className="task-detail-actions"><Button variant="ghost" onClick={onClose}>Close</Button>{canWrite&&<><Button variant="secondary" onClick={onEdit}><Pencil size={15}/> Edit task</Button>{task.status!=="done"&&<Button onClick={onComplete}><Check size={15}/> Mark as done</Button>}</>}</div>
+    </div>
+  </Modal>;
+}
+
+function CompleteTaskDialog({task,note,setNote,onCancel,onConfirm,busy}) {
+  return <Modal title="Mark task as done?" subtitle="Confirm completion and keep a note for future reference." onClose={onCancel}>
+    <div className="complete-task-dialog"><div className="complete-task-summary"><span><CheckCheck size={19}/></span><div><strong>{task.title}</strong><small>This task will remain in your task list as completed.</small></div></div>
+      <label className="field"><span>Completion note <i>Optional</i></span><textarea rows={4} maxLength={3000} value={note} onChange={e=>setNote(e.target.value)} placeholder="What was completed? Add a result, handover detail or useful context…"/></label>
+      <div className="modal-actions"><Button variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button><Button onClick={onConfirm} disabled={busy}><Check size={15}/>{busy?"Saving…":"Confirm done"}</Button></div>
+    </div>
+  </Modal>;
+}
+
 function App() {
   const [authenticated,setAuthenticated]=useState(false);
   const [checking,setChecking]=useState(true);
@@ -402,6 +435,10 @@ function App() {
   const [filters,setFilters]=useState({category:"",status:"",priority:"",deadlineState:"",dueFrom:"",dueTo:"",createdFrom:"",createdTo:"",sort:"deadline"});
   const [modal,setModal]=useState(null);
   const [editingTask,setEditingTask]=useState(null);
+  const [viewingTask,setViewingTask]=useState(null);
+  const [completingTask,setCompletingTask]=useState(null);
+  const [completionNote,setCompletionNote]=useState("");
+  const [completionBusy,setCompletionBusy]=useState(false);
   const [toast,setToast]=useState("");
   const [mobileNav,setMobileNav]=useState(false);
   const today=todayDhaka();
@@ -432,7 +469,24 @@ function App() {
   async function addTask(values){const result=await api("/api/tasks",{method:"POST",body:JSON.stringify(values)});setTasks(t=>[result,...t]);notify("Task added");}
   async function updateTask(task,values){const result=await api(`/api/tasks/${task.id}`,{method:"PATCH",body:JSON.stringify(values)});setTasks(ts=>ts.map(t=>t.id===task.id?result:t));notify("Task updated");}
   async function removeTask(task){if(!confirm(`Delete “${task.title}” permanently?`))return;await api(`/api/tasks/${task.id}`,{method:"DELETE"});setTasks(ts=>ts.filter(t=>t.id!==task.id));notify("Task deleted");}
-  async function changeStatus(task,status){const result=await api(`/api/tasks/${task.id}`,{method:"PATCH",body:JSON.stringify({...task,status})});setTasks(ts=>ts.map(t=>t.id===task.id?result:t));notify(status==="done"?"Task completed":"Task reopened");}
+  async function changeStatus(task,status,note="") {
+    const result=await api(`/api/tasks/${task.id}/status`,{method:"PATCH",body:JSON.stringify({status,completion_note:note,confirm_completion:status==="done"})});
+    setTasks(ts=>ts.map(t=>t.id===task.id?result:t));
+    setViewingTask(current=>current?.id===task.id?result:current);
+    notify(status==="done"?"Task completed":status==="in_progress"?"Task moved to in progress":"Task reopened");
+    return result;
+  }
+  function requestStatusChange(task,status) {
+    if(status==="done"&&task.status!=="done") { setCompletionNote(""); setCompletingTask(task); return; }
+    if(status!==task.status) changeStatus(task,status).catch(err=>notify(err.message));
+  }
+  async function confirmCompletion() {
+    if(!completingTask)return;
+    setCompletionBusy(true);
+    try { await changeStatus(completingTask,"done",completionNote.trim()); setCompletingTask(null); setCompletionNote(""); }
+    catch(err){notify(err.message);}
+    finally{setCompletionBusy(false);}
+  }
   async function addBusiness(name,notification_email,email_notifications){const b=await api("/api/businesses",{method:"POST",body:JSON.stringify({name,notification_email,email_notifications})});await refresh();setActive(b.id);notify("Business added");}
   async function renameBusiness(id,patch){const next=await api(`/api/businesses/${id}`,{method:"PATCH",body:JSON.stringify(patch)});setBusinesses(bs=>bs.map(x=>x.id===id?next:x));notify("Business updated");}
   async function archiveBusiness(b){const next=await api(`/api/businesses/${b.id}`,{method:"PATCH",body:JSON.stringify({archived:!b.archived})});setBusinesses(bs=>bs.map(x=>x.id===b.id?next:x));if(next.archived&&active===b.id)setActive("overview");notify(next.archived?"Business archived":"Business restored");}
@@ -472,6 +526,7 @@ function App() {
   }
   const [from,to]=rangeBounds();
   const overviewTasks=tasks.filter(t=>{
+    if(t.status==="done"||isOverdue(t,today))return true;
     if(!from)return true;
     const target=t.deadline||t.created_date;
     return target>=from&&target<=to;
@@ -511,9 +566,10 @@ function App() {
     const b=businesses.find(x=>x.id===t.business_id),c=categories.find(x=>x.id===t.category_id);
     const canWrite=canWriteBusiness(t.business_id);
     const props={task:t,category:c,business:withBusiness?b:null,today,canWrite,
-      onEdit:()=>{setEditingTask(t);setModal("task");},
+      onView:()=>setViewingTask(t),
+      onEdit:()=>{setViewingTask(null);setEditingTask(t);setModal("task");},
       onDelete:()=>removeTask(t),
-      onStatus:status=>changeStatus(t,status)};
+      onStatus:status=>requestStatusChange(t,status)};
     return listMode?<TaskListRow key={t.id} {...props}/>:<TaskCard key={t.id} {...props}/>;
   }
   const activeFilterCount=Object.entries(filters).filter(([k,v])=>k!=="sort"&&Boolean(v)).length;
@@ -527,9 +583,9 @@ function App() {
   return <div className={`app-frame ${sidebarCollapsed?"app-collapsed":""}`}>
     <aside className={`sidebar ${mobileNav?"sidebar-open":""} ${sidebarCollapsed?"sidebar-collapsed":""}`}>
       <div className="sidebar-brand-row"><Brand collapsed={sidebarCollapsed}/><IconButton label={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"} className="sidebar-collapse-toggle" onClick={()=>setSidebarCollapsed(v=>!v)}>{sidebarCollapsed?<ChevronRight size={18}/>:<ChevronLeft size={18}/>}</IconButton></div>
-      <label className="sidebar-search"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder={sidebarCollapsed?"Search":"Search tasks…"}/>{search&&<button type="button" aria-label="Clear search" onClick={()=>setSearch("")}><X size={14}/></button>}</label>
+      <label className="sidebar-search" title={sidebarCollapsed?"Search tasks":undefined}><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder={sidebarCollapsed?"Search":"Search tasks…"}/>{search&&<button type="button" aria-label="Clear search" onClick={()=>setSearch("")}><X size={14}/></button>}</label>
       <div className="sidebar-section-label">WORKSPACE</div>
-      <button className={`sidebar-link ${active==="overview"?"is-active":""}`} onClick={()=>tabTo("overview")}><LayoutDashboard size={18}/><span>Overview</span></button>
+      <button className={`sidebar-link ${active==="overview"?"is-active":""}`} title="Overview" onClick={()=>tabTo("overview")}><LayoutDashboard size={18}/><span>Overview</span></button>
       <div className="sidebar-business-heading">
         <span>BUSINESSES</span>
         <div className="sidebar-business-tools">
@@ -538,11 +594,11 @@ function App() {
         </div>
       </div>
       <nav className="sidebar-business-list">{businesses.filter(b=>!b.archived).map(b=><button key={b.id} className={`sidebar-link ${active===b.id?"is-active":""}`} onClick={()=>tabTo(b.id)} title={b.name}><span className="business-bullet">{b.name.slice(0,1)}</span><span className="sidebar-business-name">{b.name}</span><span className="sidebar-count">{pendingFor(b.id)}</span></button>)}</nav>
-      {canCreateBusiness&&<button className="sidebar-add-business" onClick={()=>setModal("businesses")}><Plus size={15}/><span>Add business</span></button>}
+      {canCreateBusiness&&<button className="sidebar-add-business" title="Add business" onClick={()=>setModal("businesses")}><Plus size={15}/><span>Add business</span></button>}
       <div className="sidebar-bottom">
-        {isOwner&&<button className="sidebar-link sidebar-admin-link" onClick={()=>setModal("users")}><Users size={17}/><span>Team access</span></button>}
+        {isOwner&&<button className="sidebar-link sidebar-admin-link" title="Team access" onClick={()=>setModal("users")}><Users size={17}/><span>Team access</span></button>}
         <div className="owner-row"><div className="owner-avatar">{(sessionUser?.displayName||"X").slice(0,1).toUpperCase()}</div><div><strong>{sessionUser?.displayName||"User"}</strong><small>{isOwner?"Workspace owner":"Team member"}</small></div></div>
-        <button className="sidebar-link logout-link" onClick={logout}><LogOut size={16}/><span>Sign out</span></button>
+        <button className="sidebar-link logout-link" title="Sign out" onClick={logout}><LogOut size={16}/><span>Sign out</span></button>
       </div>
     </aside>
     {mobileNav&&<button className="mobile-scrim" onClick={()=>setMobileNav(false)} aria-label="Close menu"/>}
@@ -582,7 +638,7 @@ function App() {
             <div className="progress-track"><i style={{width:overallProgress+"%"}}/></div>
           </div>
           <div className="overview-task-heading">
-            <strong>All tasks</strong><span>{overviewTasksSorted.length}</span>
+            <strong>All tasks</strong><span>{overviewTasksSorted.length}</span><small>Overdue and completed tasks stay visible</small>
             <div className="view-toggle"><button className={listMode?"selected":""} onClick={()=>setListMode(true)} aria-label="List view"><List size={16}/></button><button className={!listMode?"selected":""} onClick={()=>setListMode(false)} aria-label="Card view"><Grid2X2 size={16}/></button></div>
           </div>
           {loading?<div className="loading-block">Loading…</div>:overviewTasksSorted.length?<div className={listMode?"task-list-mode":"task-masonry"}>{overviewTasksSorted.map(t=>taskCard(t,true))}</div>:<EmptyState title="No tasks yet" description="Add a task to see it here." action={<Button onClick={openNewTask}><Plus size={15}/> Add task</Button>}/>}
@@ -622,6 +678,8 @@ function App() {
     {modal==="categories"&&selectedBusiness&&activeCanWrite&&<CategoryManager business={selectedBusiness} categories={categories} onClose={()=>setModal(null)} onAdd={addCategory} onEdit={editCategory} onDelete={deleteCategory}/>}
     {modal==="businesses"&&canCreateBusiness&&<BusinessManager businesses={businesses} emailConfigured={emailConfigured} canManage={isOwner} onClose={()=>setModal(null)} onAdd={addBusiness} onRename={renameBusiness} onArchive={archiveBusiness} onDelete={deleteBusiness}/>}
     {modal==="users"&&isOwner&&<UserManager users={users} businesses={businesses} onClose={()=>setModal(null)} onSave={saveUser} onDelete={deleteUser} onToggle={toggleUser}/>}
+    {viewingTask&&<TaskDetails task={tasks.find(t=>t.id===viewingTask.id)||viewingTask} business={businesses.find(b=>b.id===viewingTask.business_id)} category={categories.find(c=>c.id===viewingTask.category_id)} today={today} canWrite={canWriteBusiness(viewingTask.business_id)} onClose={()=>setViewingTask(null)} onEdit={()=>{setEditingTask(tasks.find(t=>t.id===viewingTask.id)||viewingTask);setViewingTask(null);setModal("task");}} onComplete={()=>requestStatusChange(tasks.find(t=>t.id===viewingTask.id)||viewingTask,"done")}/>}
+    {completingTask&&<CompleteTaskDialog task={completingTask} note={completionNote} setNote={setCompletionNote} onCancel={()=>{setCompletingTask(null);setCompletionNote("");}} onConfirm={confirmCompletion} busy={completionBusy}/>}
     {toast&&<div className="toast-message"><Check size={15}/>{toast}</div>}
   </div>;
 }
