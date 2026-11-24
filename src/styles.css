@@ -1813,3 +1813,62 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .whatsapp-cloud-card .provider-status { grid-column:2; justify-self:start; }
   .whatsapp-reconnect-ready a { width:100%; line-height:1.45; }
 }
+
+
+
+/* Keep the sidebar search fixed while the business list becomes independently scrollable. */
+.sidebar {
+  display:flex;
+  flex-direction:column;
+  height:100vh;
+  min-height:100vh;
+  overflow:hidden;
+}
+.sidebar-brand-row,
+.sidebar-section-label,
+.sidebar-overview-link,
+.sidebar-business-heading,
+.sidebar-add-business,
+.sidebar-bottom {
+  flex:0 0 auto;
+}
+.sidebar-search {
+  flex:0 0 44px;
+  width:100%;
+  min-width:0;
+  height:44px;
+  min-height:44px;
+  box-sizing:border-box;
+}
+.sidebar-business-list {
+  flex:1 1 auto;
+  min-height:0;
+  overflow-x:hidden;
+  overflow-y:auto;
+  display:grid;
+  grid-auto-rows:min-content;
+  align-content:start;
+  gap:4px;
+  padding:0 3px 7px 0;
+  overscroll-behavior:contain;
+  scrollbar-width:thin;
+  scrollbar-color:#d1d1d1 transparent;
+}
+.sidebar-business-list::-webkit-scrollbar { width:5px; }
+.sidebar-business-list::-webkit-scrollbar-track { background:transparent; }
+.sidebar-business-list::-webkit-scrollbar-thumb { background:#d1d1d1; border-radius:999px; }
+.sidebar-business-list .sidebar-link { flex:0 0 auto; min-width:0; }
+.sidebar-collapsed .sidebar-business-list { padding-right:0; }
+
+/* The top workspace tabs already scroll horizontally; prevent their parent from sizing to all tabs. */
+.topbar { min-width:0; }
+.business-tabs { min-width:0; flex:1 1 auto; }
+.business-tabs-scroll {
+  min-width:0;
+  max-width:100%;
+  flex:1 1 auto;
+  overflow-x:auto;
+  overflow-y:hidden;
+  overscroll-behavior-x:contain;
+}
+.topbar-right { flex:0 0 auto; }
