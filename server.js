@@ -257,7 +257,7 @@ app.patch("/api/account",requireAuth,async(req,res,next)=>{
         const next={...current};
         if(Object.prototype.hasOwnProperty.call(body,"activity_email")){
           const email=String(body.activity_email||"").trim();
-          if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email))return res.status(400).json({error:"Enter one valid owner email address."});
+          if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return res.status(400).json({error:"Enter one valid owner email address."});
           next.activity_email=email;
         }
         if(Object.prototype.hasOwnProperty.call(body,"activity_email_enabled")){
@@ -571,7 +571,7 @@ async function sendOwnerDeadlineReminder(sendDate,daysBefore,prefs){
     await client.query("BEGIN");inTransaction=true;
     const lock=await client.query("SELECT pg_try_advisory_xact_lock(hashtext($1)) AS locked",[runKey]);
     if(!lock.rows[0]?.locked){await client.query("ROLLBACK");inTransaction=false;return;}
-    const prior=await client.query("SELECT status,email_payload FROM owner_reminder_email_runs WHERE run_key=$1 FOR UPDATE",[runKey]);
+    const prior=await client.query("SELECT status,email_payload,task_count FROM owner_reminder_email_runs WHERE run_key=$1 FOR UPDATE",[runKey]);
     if(prior.rows[0]?.status==="sent"){await client.query("ROLLBACK");inTransaction=false;return;}
     let payload=prior.rows[0]?.email_payload||null;
     let taskCount=prior.rows[0]?.task_count||0;
