@@ -2,6 +2,7 @@ import express from "express";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import pg from "pg";
+pg.types.setTypeParser(1082, value => value); // Keep PostgreSQL DATE values as YYYY-MM-DD, not JS timestamps.
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
