@@ -474,7 +474,6 @@ function normalizeTask(body) {
 app.post("/api/tasks",requireAuth,async(req,res,next)=>{
   try{
     const v=normalizeTask(req.body||{});
-    if(v.status==="done"&&existing.rows[0].status!=="done")return res.status(400).json({error:"Use the task completion confirmation to mark this task done."});
     if(!await requireBusinessAccess(req,res,v.business_id,true))return;
     const result=await pool.query(
       `INSERT INTO tasks (business_id,category_id,title,description,notes,status,priority,created_date,start_date,deadline,completed_at)
@@ -496,6 +495,7 @@ app.patch("/api/tasks/:id",requireAuth,async(req,res,next)=>{
     if(!existing.rowCount)return res.status(404).json({error:"Task not found."});
     if(!await requireBusinessAccess(req,res,existing.rows[0].business_id,true))return;
     const v=normalizeTask(req.body||{});
+    if(v.status==="done"&&existing.rows[0].status!=="done")return res.status(400).json({error:"Use the task completion confirmation to mark this task done."});
     if(!await requireBusinessAccess(req,res,v.business_id,true))return;
     const result=await pool.query(
       `UPDATE tasks SET business_id=$2,category_id=$3,title=$4,description=$5,notes=$6,status=$7,priority=$8,created_date=$9,start_date=$10,deadline=$11,
