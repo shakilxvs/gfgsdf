@@ -32,6 +32,6 @@ When scheduled, the worker keeps one WhatsApp Web session connected for up to 34
 
 Run the workflow manually from GitHub Actions. In TaskXVS owner Settings, refresh the WhatsApp status and scan the QR code using WhatsApp on the dedicated sender phone: **Linked devices → Link a device**.
 
-The sender phone is only needed for pairing, but the linked session may need to be re-established if WhatsApp logs it out.
+The sender phone is only needed for pairing, but the linked session may need to be re-established if WhatsApp logs it out. If the phone unlinks the device or Baileys reports a connection conflict (440), the worker stops instead of looping with invalid or competing credentials. In TaskXVS owner Settings, choose **Reconnect WhatsApp** to clear only the saved WhatsApp auth keys. Then start the workflow manually and scan the new QR code. Do not start another worker run while an earlier run is active; the workflow uses a concurrency group to keep sessions serialized.
 
 This worker uses Baileys, an unofficial WhatsApp Web client, not Meta's official Cloud API. Unofficial clients can be restricted by WhatsApp and are not a guaranteed provider integration. Use a dedicated sender number and send only to recipients who explicitly opted in.
