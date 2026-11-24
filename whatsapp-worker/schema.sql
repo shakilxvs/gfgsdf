@@ -1,6 +1,7 @@
 -- TaskXVS free WhatsApp cloud worker storage.
--- The application role shlomo_app writes the notification queue.
--- The taskxvs_whatsapp_worker role is restricted to this schema.
+-- The TaskXVS application runs as taskxvs_app.
+-- The separate taskxvs_whatsapp_worker role is created in Neon with read_write
+-- access scoped exclusively to this schema in the taskxvs database.
 
 CREATE SCHEMA IF NOT EXISTS whatsapp_gateway;
 
@@ -42,6 +43,6 @@ INSERT INTO whatsapp_gateway.gateway_state(id,status)
 VALUES (TRUE,'disconnected')
 ON CONFLICT(id) DO NOTHING;
 
-GRANT USAGE ON SCHEMA whatsapp_gateway TO shlomo_app;
-GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA whatsapp_gateway TO shlomo_app;
-GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA whatsapp_gateway TO shlomo_app;
+GRANT USAGE ON SCHEMA whatsapp_gateway TO taskxvs_app;
+GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA whatsapp_gateway TO taskxvs_app;
+GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA whatsapp_gateway TO taskxvs_app;

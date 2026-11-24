@@ -41,3 +41,7 @@ jobs:
 
       - name: Check WhatsApp worker syntax
         run: node --check whatsapp-worker/worker.js
+
+      - name: Verify PostgreSQL ESM import
+        working-directory: whatsapp-worker
+        run: node --input-type=module -e "import pg from 'pg'; if (typeof pg.Pool !== 'function') throw new Error('pg.Pool import failed')"
