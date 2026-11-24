@@ -145,9 +145,9 @@ function TaskCard({task, category, business, today, onEdit, onDelete, onStatus})
     <div className="task-title-line"><button className={`complete-control ${task.status==="done"?"complete-checked":""}`} aria-label={task.status==="done"?"Reopen task":"Mark complete"} onClick={()=>onStatus(task.status==="done"?"todo":"done")}>{task.status==="done"&&<Check size={13}/>}</button><h3>{task.title}</h3></div>
     {task.description && <p className="task-description">{task.description}</p>}
     <div className="task-badges">
-      <select className={`status-select status-${task.status}`} value={task.status} onChange={e=>onStatus(e.target.value)} aria-label="Change task status">
+      {overdue?<span className="status-select status-delayed">Delayed</span>:<select className={`status-select status-${task.status}`} value={task.status} onChange={e=>onStatus(e.target.value)} aria-label="Change task status">
         {STATUSES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}
-      </select>
+      </select>}
       {task.priority!=="normal" && <span className={`priority-chip priority-${task.priority}`}>{priorityLabel(task.priority)} priority</span>}
       {task.deadline && <span className={`deadline-chip ${overdue?"deadline-overdue":urgent?"deadline-urgent":""}`}><Clock3 size={12}/>{relativeDeadline(task,today)}</span>}
       {!task.deadline && <span className="neutral-chip">No deadline</span>}
@@ -222,7 +222,7 @@ function TaskForm({task,businesses,categories,defaultBusiness,onClose,onSave})
 }
 
 function CategoryManager({business,categories,onClose,onAdd,onEdit,onDelete}) {
-  const [name,setName]=useState(""); const [icon,setIcon]=useState("Tag"); const [color,setColor]=useState(COLORS[0]); const [error,setError]=useState("");
+  const [name,setName]=useState(""); const [icon,setIcon]=useState("tag"); const [color,setColor]=useState(COLORS[0]); const [error,setError]=useState("");
   const [editing,setEditing]=useState(null);
   const list=categories.filter(c=>c.business_id===business.id);
   async function submit(e) {
@@ -230,10 +230,10 @@ function CategoryManager({business,categories,onClose,onAdd,onEdit,onDelete}) {
     try {
       if(editing) await onEdit(editing.id,{name:name.trim(),icon,color});
       else await onAdd({business_id:business.id,name:name.trim(),icon,color});
-      setEditing(null); setName(""); setIcon("Tag"); setColor(COLORS[0]);
+      setEditing(null); setName(""); setIcon("tag"); setColor(COLORS[0]);
     } catch(err){setError(err.message);}
   }
-  function startEdit(c){setEditing(c);setName(c.name);setIcon(c.icon||"Tag");setColor(c.color||COLORS[0]);}
+  function startEdit(c){setEditing(c);setName(c.name);setIcon(c.icon||"tag");setColor(c.color||COLORS[0]);}
   const SelectedIcon=ICONS[icon]||Tag;
   return <Modal title="Categories" subtitle={`Organize the work for ${business.name}.`} onClose={onClose} wide>
     <div className="category-manager-list">{list.map(c=>{
@@ -248,7 +248,7 @@ function CategoryManager({business,categories,onClose,onAdd,onEdit,onDelete}) {
       </div>
       <div className="color-palette"><span>Accent</span>{COLORS.map(c=><button type="button" key={c} className={`color-dot ${color===c?"selected":""}`} style={{background:c}} onClick={()=>setColor(c)} aria-label={`Select ${c}`}/>) }<span className="category-preview selected-preview" style={{background:color+"18",color}}><SelectedIcon size={15}/></span></div>
       {error && <div className="form-error">{error}</div>}
-      <div className="modal-actions">{editing&&<Button variant="ghost" type="button" onClick={()=>{setEditing(null);setName("");setIcon("Tag");setColor(COLORS[0]);}}>Cancel edit</Button>}<Button>{editing?"Save category":"Add category"}</Button></div>
+      <div className="modal-actions">{editing&&<Button variant="ghost" type="button" onClick={()=>{setEditing(null);setName("");setIcon("tag");setColor(COLORS[0]);}}>Cancel edit</Button>}<Button>{editing?"Save category":"Add category"}</Button></div>
     </form>
   </Modal>;
 }
@@ -391,7 +391,7 @@ function App() {
   }
   const activeFilterCount=Object.entries(filters).filter(([k,v])=>k!=="sort"&&Boolean(v)).length;
   function openNewTask(){setEditingTask(null);if(active==="overview"&&!businesses.some(b=>!b.archived)){notify("Add a business first.");return;}setModal("task");}
-  function tabTo(id){setActive(id);clearFilters();setSearch("");setMobileNav(false);}
+  function tabTo(id){setActive(id);clearFilters();setSearch("");setFiltersOpen(false);setMobileNav(false);}
   const headerTitle=search.trim()?"Search results":active==="overview"?"Overview":selectedBusiness?.name||"Overview";
   const headerSub=search.trim()?"Across all your businesses":active==="overview"?"Your businesses, priorities and deadlines in one place":`Tasks and categories for ${selectedBusiness?.name||"this business"}`;
 
