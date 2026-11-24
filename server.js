@@ -258,13 +258,22 @@ async function getWhatsAppGatewayStatus() {
   const lastSeen=row.last_seen_at?new Date(row.last_seen_at).getTime():0;
   const fresh=lastSeen>0&&(Date.now()-lastSeen)<45*60*1000;
   const effectiveStatus=row.status==="connected"&&!fresh?"disconnected":(row.status||"disconnected");
+  const reconnectReady=String(row.last_error||"").startsWith("RECONNECT_READY:");
+  const storedError=reconnectReady
+    ? String(row.last_error).slice("RECONNECT_READY:".length).trim()
+    : (row.last_error||"");
+  const lastError=row.status==="logged_out"&&/Stream Errored \\(conflict\\)/i.test(storedError)
+    ? "WhatsApp session conflict. Another linked session replaced this connection. Close any other active TaskXVS worker, then choose Reconnect WhatsApp to create a fresh QR code."
+    : storedError;
   return {
     status:effectiveStatus,
     connected:row.status==="connected"&&fresh,
+    reconnect_required:row.status==="logged_out",
+    reconnect_ready:reconnectReady,
     qr_data_url:row.qr_data_url||"",
     phone_number:row.phone_number||"",
     last_seen_at:row.last_seen_at||null,
-    last_error:row.last_error||"",
+    last_error:lastError,
     updated_at:row.updated_at||null
   };
 }
@@ -403,6 +412,57 @@ app.get("/api/admin/whatsapp/status",requireAuth,requireOwner,async(req,res,next
     const state=await getWhatsAppGatewayStatus();
     res.set("Cache-Control","no-store").json(state);
   }catch(e){next(e);}
+});
+app.post("/api/admin/whatsapp/reconnect",requireAuth,requireOwner,async(req,res,next)=>{
+  let client=null;
+  let transactionOpen=false;
+  try{
+    client=await pool.connect();
+    await client.query("BEGIN");
+    transactionOpen=true;
+    const current=await client.query(
+      "SELECT status,last_seen_at,updated_at FROM whatsapp_gateway.gateway_state WHERE id=true FOR UPDATE"
+    );
+    if(!current.rowCount){
+      await client.query("ROLLBACK");
+      transactionOpen=false;
+      return res.status(503).json({error:"WhatsApp connection state is not initialized yet. Start the worker once, then retry."});
+    }
+    const row=current.rows[0];
+    const now=Date.now();
+    const lastSeen=row.last_seen_at?new Date(row.last_seen_at).getTime():0;
+    const updatedAt=row.updated_at?new Date(row.updated_at).getTime():0;
+    const connectedFresh=row.status==="connected"&&lastSeen>0&&(now-lastSeen)<45*60*1000;
+    const handshakeFresh=["connecting","qr"].includes(row.status)&&updatedAt>0&&(now-updatedAt)<5*60*1000;
+    if(connectedFresh||handshakeFresh){
+      await client.query("ROLLBACK");
+      transactionOpen=false;
+      return res.status(409).json({
+        error:"The WhatsApp worker still appears active. Cancel its current GitHub Actions run, wait for it to stop, then retry reconnecting."
+      });
+    }
+
+    // Only the saved WhatsApp Web credentials are removed. Task, business,
+    // notification queue, notification history and other workspace data stay untouched.
+    await client.query("DELETE FROM whatsapp_gateway.auth_kv");
+    await client.query(
+      "UPDATE whatsapp_gateway.gateway_state SET status='disconnected',qr_data_url=NULL,phone_number=NULL,last_seen_at=NULL,last_error=$1,updated_at=now() WHERE id=true",
+      ["RECONNECT_READY:Previous WhatsApp login cleared. Start the TaskXVS WhatsApp worker workflow to generate a fresh QR code."]
+    );
+    await client.query("COMMIT");
+    transactionOpen=false;
+
+    const state=await getWhatsAppGatewayStatus();
+    res.set("Cache-Control","no-store").json({
+      ...state,
+      message:"The previous WhatsApp login was cleared. Start the TaskXVS WhatsApp worker workflow to generate a fresh QR code."
+    });
+  }catch(error){
+    if(transactionOpen&&client)await client.query("ROLLBACK").catch(()=>{});
+    next(error);
+  }finally{
+    client?.release();
+  }
 });
 app.post("/api/admin/whatsapp/test",requireAuth,requireOwner,async(req,res,next)=>{
   try{
