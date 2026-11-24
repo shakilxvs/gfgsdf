@@ -176,7 +176,7 @@ function TaskListRow({task,category,business,today,onEdit,onDelete,onStatus}) {
   </article>;
 }
 
-function TaskForm({task,businesses,categories,defaultBusiness,onClose,onSave})
+function TaskForm({task,businesses,categories,defaultBusiness,onClose,onSave}) {
   const [draft,setDraft]=useState(()=>({
     business_id:task?.business_id||defaultBusiness||businesses[0]?.id||"",
     category_id:task?.category_id||"",
