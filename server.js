@@ -500,7 +500,7 @@ app.patch("/api/tasks/:id",requireAuth,async(req,res,next)=>{
     const result=await pool.query(
       `UPDATE tasks SET business_id=$2,category_id=$3,title=$4,description=$5,notes=$6,status=$7,priority=$8,created_date=$9,start_date=$10,deadline=$11,
        completed_at=CASE WHEN $7='done' THEN COALESCE(completed_at,now()) ELSE NULL END,
-       delayed_notified_at=CASE WHEN $7='done' OR $11 IS NULL OR $11 >= (now() AT TIME ZONE 'Asia/Dhaka')::date THEN NULL ELSE delayed_notified_at END WHERE id=$1 RETURNING *`,
+       delayed_notified_at=CASE WHEN $7='done' OR $11::date IS NULL OR $11::date >= (now() AT TIME ZONE 'Asia/Dhaka')::date THEN NULL ELSE delayed_notified_at END WHERE id=$1 RETURNING *`,
       [req.params.id,v.business_id,v.category_id,v.title,v.description,v.notes,v.status,v.priority,v.created_date,v.start_date,v.deadline]
     );
     res.json(result.rows[0]);
