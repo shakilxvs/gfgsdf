@@ -135,15 +135,21 @@ async function requireBusinessAccess(req, res, businessId, write=false) {
 async function recordActivity(req,event) {
   try {
     const auth=req?.auth||{};
-    await pool.query(
+    const saved=await pool.query(
       `INSERT INTO activity_log
        (actor_id,actor_username,actor_display_name,event_type,entity_type,entity_id,business_id,title,details)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)
+       RETURNING id`,
       [auth.id?String(auth.id):null,auth.username||"unknown",auth.displayName||auth.username||"Unknown",
        event.event_type,event.entity_type,event.entity_id?String(event.entity_id):null,
        event.business_id?String(event.business_id):null,event.title||"Workspace change",
        JSON.stringify(event.details||{})]
     );
+    const activityId=saved.rows[0]?.id;
+    if(activityId){
+      void sendOwnerActivityEmail(auth,event,String(activityId))
+        .catch(error=>console.error("Owner activity email failed:",error.message));
+    }
   } catch(error) { console.error("Activity log write failed:",error.message); }
 }
 async function recordSystemActivity(event) {
@@ -206,28 +212,86 @@ app.get("/api/account",requireAuth,async(req,res,next)=>{
   try{
     const gateway=await getWhatsAppGatewayStatus();
     if(req.auth.role==="owner"){
-      const result=await pool.query("SELECT setting_value FROM workspace_settings WHERE setting_key='owner_whatsapp' LIMIT 1");
-      const value=result.rows[0]?.setting_value||{};
+      const [whatsappResult,preferences]=await Promise.all([
+        pool.query("SELECT setting_value FROM workspace_settings WHERE setting_key='owner_whatsapp' LIMIT 1"),
+        getOwnerNotificationPreferences()
+      ]);
+      const whatsapp=whatsappResult.rows[0]?.setting_value||{};
       return res.set("Cache-Control","no-store").json({
-        whatsapp_number:value.whatsapp_number||"",
-        whatsapp_notifications_enabled:Boolean(value.whatsapp_notifications_enabled),
-        whatsapp_configured:gateway.connected
+        ...preferences,
+        whatsapp_number:whatsapp.whatsapp_number||"",
+        whatsapp_notifications_enabled:Boolean(whatsapp.whatsapp_notifications_enabled),
+        whatsapp_configured:gateway.connected,
+        role:"owner"
       });
     }
     const result=await pool.query("SELECT whatsapp_number,whatsapp_notifications_enabled FROM users WHERE id=$1",[req.auth.id]);
     if(!result.rowCount)return res.status(404).json({error:"Account not found."});
-    res.set("Cache-Control","no-store").json({...result.rows[0],whatsapp_configured:gateway.connected});
+    res.set("Cache-Control","no-store").json({...result.rows[0],whatsapp_configured:gateway.connected,role:"member"});
   }catch(e){next(e);}
 });
 app.patch("/api/account",requireAuth,async(req,res,next)=>{
   try{
-    const phone=normalizeWhatsAppNumber(req.body?.whatsapp_number);
-    const enabled=typeof req.body?.whatsapp_notifications_enabled==="boolean"?req.body.whatsapp_notifications_enabled:false;
+    const body=req.body||{};
     if(req.auth.role==="owner"){
-      const value={whatsapp_number:phone||"",whatsapp_notifications_enabled:enabled};
-      await pool.query("INSERT INTO workspace_settings(setting_key,setting_value,updated_at) VALUES ('owner_whatsapp',$1::jsonb,now()) ON CONFLICT(setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value,updated_at=now()",[JSON.stringify(value)]);
-      return res.json(value);
+      const hasWhatsApp=Object.prototype.hasOwnProperty.call(body,"whatsapp_number")
+        ||Object.prototype.hasOwnProperty.call(body,"whatsapp_notifications_enabled");
+      if(hasWhatsApp){
+        const current=await pool.query("SELECT setting_value FROM workspace_settings WHERE setting_key='owner_whatsapp' LIMIT 1");
+        const previous=current.rows[0]?.setting_value||{};
+        const phone=Object.prototype.hasOwnProperty.call(body,"whatsapp_number")
+          ? normalizeWhatsAppNumber(body.whatsapp_number)
+          : (previous.whatsapp_number||null);
+        const enabled=typeof body.whatsapp_notifications_enabled==="boolean"
+          ? body.whatsapp_notifications_enabled
+          : Boolean(previous.whatsapp_notifications_enabled);
+        const value={whatsapp_number:phone||"",whatsapp_notifications_enabled:enabled};
+        await pool.query(
+          "INSERT INTO workspace_settings(setting_key,setting_value,updated_at) VALUES ('owner_whatsapp',$1::jsonb,now()) ON CONFLICT(setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value,updated_at=now()",
+          [JSON.stringify(value)]
+        );
+      }
+      const preferenceKeys=["activity_email","activity_email_enabled","deadline_reminders_enabled","timezone"];
+      if(preferenceKeys.some(key=>Object.prototype.hasOwnProperty.call(body,key))){
+        const current=await getOwnerNotificationPreferences();
+        const next={...current};
+        if(Object.prototype.hasOwnProperty.call(body,"activity_email")){
+          const email=String(body.activity_email||"").trim();
+          if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email))return res.status(400).json({error:"Enter one valid owner email address."});
+          next.activity_email=email;
+        }
+        if(Object.prototype.hasOwnProperty.call(body,"activity_email_enabled")){
+          if(typeof body.activity_email_enabled!=="boolean")return res.status(400).json({error:"Invalid activity email setting."});
+          next.activity_email_enabled=body.activity_email_enabled;
+        }
+        if(Object.prototype.hasOwnProperty.call(body,"deadline_reminders_enabled")){
+          if(typeof body.deadline_reminders_enabled!=="boolean")return res.status(400).json({error:"Invalid deadline reminder setting."});
+          next.deadline_reminders_enabled=body.deadline_reminders_enabled;
+        }
+        if(Object.prototype.hasOwnProperty.call(body,"timezone")){
+          const requested=String(body.timezone||"").trim();
+          try{new Intl.DateTimeFormat("en-US",{timeZone:requested}).format(new Date());}
+          catch{return res.status(400).json({error:"Choose a valid time zone."});}
+          next.timezone=requested;
+        }
+        await pool.query(
+          "INSERT INTO workspace_settings(setting_key,setting_value,updated_at) VALUES ('owner_notification_preferences',$1::jsonb,now()) ON CONFLICT(setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value,updated_at=now()",
+          [JSON.stringify(next)]
+        );
+      }
+      const [whatsappResult,preferences]=await Promise.all([
+        pool.query("SELECT setting_value FROM workspace_settings WHERE setting_key='owner_whatsapp' LIMIT 1"),
+        getOwnerNotificationPreferences()
+      ]);
+      const whatsapp=whatsappResult.rows[0]?.setting_value||{};
+      return res.json({
+        ...preferences,
+        whatsapp_number:whatsapp.whatsapp_number||"",
+        whatsapp_notifications_enabled:Boolean(whatsapp.whatsapp_notifications_enabled)
+      });
     }
+    const phone=normalizeWhatsAppNumber(body.whatsapp_number);
+    const enabled=typeof body.whatsapp_notifications_enabled==="boolean"?body.whatsapp_notifications_enabled:false;
     const result=await pool.query("UPDATE users SET whatsapp_number=$2,whatsapp_notifications_enabled=$3,updated_at=now() WHERE id=$1 RETURNING whatsapp_number,whatsapp_notifications_enabled",[req.auth.id,phone,enabled]);
     if(!result.rowCount)return res.status(404).json({error:"Account not found."});
     res.json(result.rows[0]);
@@ -249,6 +313,38 @@ function normalizeWhatsAppNumber(raw) {
   const normalized=value.replace(/[\s().-]/g,"");
   if(!/^\+[1-9]\d{7,14}$/.test(normalized))throw Object.assign(new Error("Enter a WhatsApp number in international format, e.g. +8801XXXXXXXXX."),{status:400});
   return normalized;
+}
+
+const DEFAULT_OWNER_TIMEZONE="America/New_York";
+function normalizeTimeZone(raw){
+  const value=String(raw||DEFAULT_OWNER_TIMEZONE).trim();
+  try{new Intl.DateTimeFormat("en-US",{timeZone:value}).format(new Date());return value;}
+  catch{return DEFAULT_OWNER_TIMEZONE;}
+}
+async function getOwnerNotificationPreferences(){
+  const result=await pool.query("SELECT setting_value FROM workspace_settings WHERE setting_key='owner_notification_preferences' LIMIT 1");
+  const value=result.rows[0]?.setting_value||{};
+  return {
+    activity_email:String(value.activity_email||"shakilxvs@gmail.com").trim(),
+    activity_email_enabled:value.activity_email_enabled!==false,
+    deadline_reminders_enabled:value.deadline_reminders_enabled!==false,
+    timezone:normalizeTimeZone(value.timezone)
+  };
+}
+function getZonedDateParts(timeZone,instant=new Date()){
+  const parts=Object.fromEntries(new Intl.DateTimeFormat("en-US",{
+    timeZone,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",hourCycle:"h23"
+  }).formatToParts(instant).map(part=>[part.type,part.value]));
+  return {date:`${parts.year}-${parts.month}-${parts.day}`,hour:Number(parts.hour||0)};
+}
+function addIsoDays(isoDate,days){
+  const [year,month,day]=String(isoDate).split("-").map(Number);
+  return new Date(Date.UTC(year,month-1,day+days)).toISOString().slice(0,10);
+}
+function formatIsoDate(isoDate,timeZone="UTC"){
+  if(!isoDate)return "No deadline set";
+  return new Intl.DateTimeFormat("en-US",{timeZone,month:"long",day:"numeric",year:"numeric"})
+    .format(new Date(String(isoDate).slice(0,10)+"T12:00:00Z"));
 }
 async function getWhatsAppGatewayStatus() {
   const result=await pool.query(
