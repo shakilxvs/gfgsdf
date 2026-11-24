@@ -6,7 +6,7 @@ import {
   LogOut, Mail, Megaphone, Menu, MoreHorizontal, Palette, PenLine, Percent,
   Plus, Search, Settings, ShoppingBag, SlidersHorizontal, Tag, Trash2,
   Video, Wallet, X, Pencil, RotateCcw, AlertCircle, CalendarRange,
-  Layers3, CircleCheck, CircleAlert, PanelLeftClose, PanelLeftOpen, Grid2X2, Sparkles, Lock,
+  Layers3, CircleCheck, CircleAlert, ChevronLeft, ChevronRight, Grid2X2, Sparkles, Lock,
   Terminal, PanelTop, Blocks, Bug, ClipboardCheck, Plug, Workflow, SearchCheck, FileText,
   NotebookPen, Instagram, ChartNoAxesCombined, ChartLine, ListChecks, PackageSearch,
   Truck, Boxes, Warehouse, ShoppingBasket, Headset, Microscope, Shapes, BadgePercent,
@@ -526,7 +526,7 @@ function App() {
   if(!authenticated)return <Login onLogin={login}/>;
   return <div className={`app-frame ${sidebarCollapsed?"app-collapsed":""}`}>
     <aside className={`sidebar ${mobileNav?"sidebar-open":""} ${sidebarCollapsed?"sidebar-collapsed":""}`}>
-      <div className="sidebar-brand-row"><Brand collapsed={sidebarCollapsed}/><IconButton label={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"} className="sidebar-collapse-toggle" onClick={()=>setSidebarCollapsed(v=>!v)}>{sidebarCollapsed?<PanelLeftOpen size={18}/>:<PanelLeftClose size={18}/>}</IconButton></div>
+      <div className="sidebar-brand-row"><Brand collapsed={sidebarCollapsed}/><IconButton label={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"} className="sidebar-collapse-toggle" onClick={()=>setSidebarCollapsed(v=>!v)}>{sidebarCollapsed?<ChevronRight size={18}/>:<ChevronLeft size={18}/>}</IconButton></div>
       <label className="sidebar-search"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder={sidebarCollapsed?"Search":"Search tasks…"}/>{search&&<button type="button" aria-label="Clear search" onClick={()=>setSearch("")}><X size={14}/></button>}</label>
       <div className="sidebar-section-label">WORKSPACE</div>
       <button className={`sidebar-link ${active==="overview"?"is-active":""}`} onClick={()=>tabTo("overview")}><LayoutDashboard size={18}/><span>Overview</span></button>
