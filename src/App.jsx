@@ -190,14 +190,14 @@ function TaskListRow({task,category,business,today,onEdit,onDelete,onStatus,canW
       {task.description&&<p className="task-row-description">{task.description}</p>}
     </div>
     <div className="task-row-deadline"><span className="deadline-label">DEADLINE</span><DeadlineView value={task.deadline} today={today}/></div>
-        <div className="task-row-actions">
-      {canWrite?<select className={delayed?"task-status-select status-delayed":""} value={delayed?"delayed":task.status} onChange={e=>onStatus(e.target.value)} aria-label="Change task status">
+    {canWrite?<div className="task-row-actions">
+      <select className={delayed?"task-status-select status-delayed":""} value={delayed?"delayed":task.status} onChange={e=>onStatus(e.target.value)} aria-label="Change task status">
         {delayed&&<option value="delayed" disabled>Delayed</option>}
         <option value="todo">To do</option><option value="in_progress">In progress</option><option value="done">Done</option>
-      </select>:<span className={`task-status-readonly ${delayed?"status-delayed":""}`}>{statusText}</span>}
+      </select>
       <IconButton label="Edit task" onClick={onEdit}><Pencil size={16}/></IconButton>
       <IconButton label="Delete task" onClick={onDelete}><Trash2 size={16}/></IconButton>
-    </div>}
+    </div>:<span className={`task-status-readonly ${delayed?"status-delayed":""}`}>{statusText}</span>}
   </article>;
 }
 
