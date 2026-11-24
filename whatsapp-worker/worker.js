@@ -14,6 +14,7 @@ import QRCode from "qrcode";
 const DATABASE_URL = process.env.DATABASE_URL;
 const RUN_MINUTES = Math.max(10, Number(process.env.WHATSAPP_WORKER_MINUTES || 345));
 const RUN_UNTIL = Date.now() + RUN_MINUTES * 60_000;
+const QUEUE_POLL_INTERVAL_MS = 20 * 60 * 1000;
 const logger = pino({ level: "silent" });
 
 if (!DATABASE_URL) {
@@ -25,7 +26,7 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
   max: 4,
   connectionTimeoutMillis: 15000,
-  idleTimeoutMillis: 30000
+  idleTimeoutMillis: 60000
 });
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -245,10 +246,14 @@ async function runSocketSession() {
 
   while (Date.now() < RUN_UNTIL && !closed) {
     if (connected) {
-      await processQueue(socket, () => connected && !closed);
+      const hadMessages = await processQueue(socket, () => connected && !closed);
       await pool.query(
         "UPDATE whatsapp_gateway.gateway_state SET last_seen_at=now(),updated_at=now() WHERE id=true AND status='connected'"
       );
+      if (!hadMessages && connected && !closed) {
+        // Let Neon scale to zero between checks to keep this within its free compute allowance.
+        await sleep(QUEUE_POLL_INTERVAL_MS);
+      }
     } else {
       await sleep(1800);
     }
