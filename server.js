@@ -390,6 +390,247 @@ async function sendBusinessNotification(business,event,task){
   return true;
  } catch(error){console.error("Task notification email error:",error.message);return false;}
 }
+async function sendResendEmail(payload,idempotencyKey){
+  if(!RESEND_API_KEY||!RESEND_FROM)throw new Error("Resend is not configured for TaskXVS.");
+  const response=await fetch("https://api.resend.com/emails",{
+    method:"POST",
+    headers:{
+      Authorization:`Bearer ${RESEND_API_KEY}`,
+      "Content-Type":"application/json",
+      ...(idempotencyKey?{"Idempotency-Key":String(idempotencyKey).slice(0,256)}:{})
+    },
+    body:JSON.stringify({...payload,from:payload.from||RESEND_FROM}),
+    signal:AbortSignal.timeout(20000)
+  });
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(`Resend returned ${response.status}: ${result.message||result.name||"email request failed"}`);
+  return result.id||null;
+}
+const ACTIVITY_EMAIL_LABELS={
+  task_created:"Task created",task_updated:"Task updated",task_status_changed:"Task status changed",task_deleted:"Task deleted",
+  business_created:"Business created",business_updated:"Business updated",business_archived:"Business archived",
+  business_restored:"Business restored",business_deleted:"Business deleted",
+  category_created:"Category created",category_updated:"Category updated",category_deleted:"Category deleted",
+  team_member_created:"Team member created",team_member_updated:"Team member updated",
+  team_member_disabled:"Team member disabled",team_member_enabled:"Team member enabled",team_member_deleted:"Team member deleted"
+};
+const ACTIVITY_FIELD_LABELS={
+  title:"Task title",description:"Description",notes:"Notes",category_id:"Category",deadline:"Deadline",
+  priority:"Priority",created_date:"Created date",start_date:"Start date",business_id:"Business",
+  status:"Status",name:"Name",notification_email:"Notification email",
+  email_notifications:"Business email notifications",active:"Account active",display_name:"Display name",
+  assignments:"Business access",from:"Previous status",to:"New status"
+};
+function activityValueLabel(key,value){
+  if(value===null||value===undefined||value==="")return "Not set";
+  if(key==="email_notifications"||key==="active")return value?"Enabled":"Disabled";
+  if(key==="priority")return String(value).charAt(0).toUpperCase()+String(value).slice(1);
+  if(["status","from","to"].includes(key))return ({todo:"To do",in_progress:"In progress",done:"Done"})[value]||String(value);
+  if(Array.isArray(value))return value.map(item=>typeof item==="object"?JSON.stringify(item):String(item)).join(", ");
+  if(typeof value==="object")return JSON.stringify(value);
+  return String(value);
+}
+async function sendOwnerActivityEmail(auth,event,activityId){
+  try{
+    const prefs=await getOwnerNotificationPreferences();
+    if(!prefs.activity_email_enabled||!prefs.activity_email||!RESEND_API_KEY||!RESEND_FROM)return false;
+    const businessResult=event.business_id
+      ? await pool.query("SELECT id::text,name FROM businesses WHERE id::text=$1 LIMIT 1",[String(event.business_id)])
+      : {rows:[]};
+    const business=businessResult.rows[0]||null;
+    const details=event.details||{};
+    const changes=[];
+    if(details.before&&details.after&&typeof details.before==="object"&&typeof details.after==="object"){
+      for(const key of Object.keys(details.after)){
+        if(JSON.stringify(details.before[key]??null)===JSON.stringify(details.after[key]??null))continue;
+        changes.push({
+          key,
+          label:ACTIVITY_FIELD_LABELS[key]||key.replaceAll("_"," ").replace(/^./,x=>x.toUpperCase()),
+          before:activityValueLabel(key,details.before[key]),
+          after:activityValueLabel(key,details.after[key])
+        });
+      }
+    }
+    if(details.from!==undefined&&details.to!==undefined){
+      changes.push({key:"status",label:"Status",before:activityValueLabel("from",details.from),after:activityValueLabel("to",details.to)});
+    }
+    if(!changes.length){
+      for(const key of ["status","priority","deadline","notification_email","email_notifications","assigned_business_count"]){
+        if(details[key]!==undefined)changes.push({
+          key,label:ACTIVITY_FIELD_LABELS[key]||key,
+          before:"",after:activityValueLabel(key,details[key])
+        });
+      }
+      if(Array.isArray(details.assignments))changes.push({
+        key:"assignments",label:"Business access",before:"",
+        after:details.assignments.map(item=>`${item.business_name||item.business_id}: ${item.permission}`).join(", ")
+      });
+    }
+    const categoryIds=[...new Set(changes.filter(item=>item.key==="category_id")
+      .flatMap(item=>[item.before,item.after]).filter(value=>/^[0-9a-f-]{36}$/i.test(value)))];
+    if(categoryIds.length){
+      const categories=await pool.query("SELECT id::text,name FROM categories WHERE id=ANY($1::uuid[])",[categoryIds]);
+      const names=new Map(categories.rows.map(row=>[row.id,row.name]));
+      for(const item of changes)if(item.key==="category_id"){
+        item.before=names.get(item.before)||item.before;
+        item.after=names.get(item.after)||item.after;
+      }
+    }
+    const actorName=String(auth.displayName||auth.username||"Workspace member");
+    const actorUsername=String(auth.username||"unknown");
+    const eventLabel=ACTIVITY_EMAIL_LABELS[event.event_type]||String(event.event_type||"Workspace updated").replaceAll("_"," ").replace(/^./,x=>x.toUpperCase());
+    const businessName=business?.name||"Workspace";
+    const when=new Intl.DateTimeFormat("en-US",{timeZone:prefs.timezone,dateStyle:"medium",timeStyle:"short"}).format(new Date());
+    const subject=`[TaskXVS] ${businessName} · ${eventLabel}`.slice(0,180);
+    const esc=escapeHtml;
+    const rows=changes.slice(0,14).map(item=>`<tr><td style="padding:11px 12px;border-bottom:1px solid #eee;color:#68716a;font-size:12px;width:31%">${esc(item.label)}</td><td style="padding:11px 12px;border-bottom:1px solid #eee;color:#777;font-size:12px">${item.before?esc(item.before)+" &nbsp;→&nbsp; ":""}<b style="color:#222">${esc(item.after)}</b></td></tr>`).join("");
+    const note=details.note?String(details.note):"";
+    const text=[
+      `TASKXVS · ${eventLabel}`,
+      `Business: ${businessName}`,
+      `Changed by: ${actorName} (@${actorUsername})`,
+      `Action: ${event.title||eventLabel}`,
+      ...changes.slice(0,14).map(item=>`${item.label}: ${item.before?item.before+" → ":""}${item.after}`),
+      note?`Note: ${note}`:"",
+      `Time: ${when}`,
+      business?.id?`https://task.shakilxvs.com/?business=${business.id}`:"https://task.shakilxvs.com"
+    ].filter(Boolean).join("\n\n");
+    const businessUrl=business?.id?`https://task.shakilxvs.com/?business=${encodeURIComponent(business.id)}`:"https://task.shakilxvs.com";
+    const html=`<!doctype html><html><body style="margin:0;padding:30px 12px;background:#f4f4f1;font-family:Arial,sans-serif;color:#171717">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;margin:auto;background:#fff;border:1px solid #e5e5e0;border-radius:18px;overflow:hidden">
+        <tr><td style="padding:22px 26px;border-bottom:1px solid #eee"><b style="display:inline-block;padding:9px 11px;border-radius:9px;background:#e60023;color:#fff">✓</b><b style="margin-left:10px;letter-spacing:2px">TASKXVS</b><span style="float:right;color:#888;font-size:12px;padding-top:10px">${esc(businessName)}</span></td></tr>
+        <tr><td style="padding:29px 26px">
+          <span style="font-size:10px;font-weight:700;letter-spacing:1.4px;color:#b85a35">WORKSPACE ACTIVITY</span>
+          <h1 style="margin:12px 0 8px;font-size:25px;line-height:1.2">${esc(eventLabel)}</h1>
+          <p style="margin:0 0 21px;color:#777;font-size:13px;line-height:1.6">${esc(event.title||"A workspace change was recorded.")}</p>
+          <div style="padding:14px 16px;background:#fafaf8;border:1px solid #eee;border-radius:12px;margin-bottom:18px">
+            <div style="font-size:10px;color:#96968f;letter-spacing:1px">CHANGED BY</div>
+            <div style="font-size:14px;font-weight:700;margin-top:5px">${esc(actorName)}</div>
+            <div style="font-size:11px;color:#888;margin-top:3px">@${esc(actorUsername)} · ${esc(when)}</div>
+          </div>
+          ${rows?'<div style="border:1px solid #eaeae6;border-radius:12px;overflow:hidden"><div style="padding:12px 13px;background:#fafaf8;font-size:10px;font-weight:700;letter-spacing:1px;color:#8b8b83">WHAT CHANGED</div><table role="presentation" width="100%" cellspacing="0" cellpadding="0">'+rows+'</table></div>':""}
+          ${note?'<div style="margin-top:16px;padding:13px 15px;background:#f7f8f5;border-radius:10px;color:#555;font-size:12px;line-height:1.6"><b>Note</b><br>'+esc(note)+'</div>':""}
+          <p style="margin:24px 0 0"><a href="${businessUrl}" style="display:inline-block;padding:12px 19px;border-radius:999px;background:#e60023;color:#fff;text-decoration:none;font-size:12px;font-weight:700">Open TaskXVS</a></p>
+        </td></tr>
+        <tr><td style="padding:17px 26px;background:#fafaf8;border-top:1px solid #eee;color:#999;font-size:10px;line-height:1.5">You receive this owner-only activity email because workspace activity notifications are enabled in My account.</td></tr>
+      </table></body></html>`;
+    await sendResendEmail({to:[prefs.activity_email],subject,html,text},`taskxvs-activity-${activityId}`);
+    return true;
+  }catch(error){
+    console.error("Owner activity email could not be sent:",error.message);
+    return false;
+  }
+}
+function buildDeadlineReminderEmail(tasks,prefs,daysBefore,sendDate,dueDate){
+  const groups=new Map();
+  for(const task of tasks){
+    if(!groups.has(task.business_id))groups.set(task.business_id,{name:task.business_name,id:task.business_id,tasks:[]});
+    groups.get(task.business_id).tasks.push(task);
+  }
+  const esc=escapeHtml;
+  const dayLabel=daysBefore===1?"tomorrow":"in 2 days";
+  const businessSections=[...groups.values()].map(group=>{
+    const items=group.tasks.map(task=>`<tr><td style="padding:13px 14px;border-top:1px solid #eee">
+      <a href="https://task.shakilxvs.com/?business=${encodeURIComponent(group.id)}" style="color:#1f2721;font-size:13px;font-weight:700;text-decoration:none">${esc(task.title)}</a>
+      <div style="margin-top:5px;color:#777;font-size:11px;line-height:1.5">${esc(task.description||"No description")}</div>
+      <div style="margin-top:7px;color:#8b8b83;font-size:10px">${esc(task.status==="in_progress"?"In progress":"To do")} · ${esc(String(task.priority||"normal").toUpperCase())} priority</div>
+    </td></tr>`).join("");
+    return `<div style="margin-top:16px;border:1px solid #e9e9e5;border-radius:13px;overflow:hidden">
+      <div style="padding:13px 15px;background:#fafaf8;font-size:12px;font-weight:700">${esc(group.name)} <span style="float:right;color:#888;font-weight:500">${group.tasks.length} task${group.tasks.length===1?"":"s"}</span></div>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0">${items}</table></div>`;
+  }).join("");
+  const subject=`[TaskXVS] ${daysBefore} day${daysBefore===1?"":"s"} left · ${tasks.length} deadline task${tasks.length===1?"":"s"}`;
+  const text=[
+    "TASKXVS · DEADLINE REMINDER",
+    `${tasks.length} open task(s) are due ${dayLabel}.`,
+    `Deadline: ${formatIsoDate(dueDate,prefs.timezone)}`,
+    ...[...groups.values()].flatMap(group=>[`\n${group.name}`,...group.tasks.map(task=>`• ${task.title} | ${task.status} | ${task.priority}${task.description?" | "+task.description:""}`)]),
+    "Open TaskXVS: https://task.shakilxvs.com"
+  ].join("\n");
+  const html=`<!doctype html><html><body style="margin:0;padding:28px 12px;background:#f4f4f1;font-family:Arial,sans-serif;color:#171717">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;margin:auto;background:#fff;border:1px solid #e6e6e1;border-radius:18px;overflow:hidden">
+      <tr><td style="padding:22px 26px;border-bottom:1px solid #eee"><b style="display:inline-block;padding:9px 11px;border-radius:9px;background:#e60023;color:#fff">✓</b><b style="margin-left:10px;letter-spacing:2px">TASKXVS</b><span style="float:right;color:#888;font-size:11px;padding-top:10px">OWNER REMINDER</span></td></tr>
+      <tr><td style="padding:28px 26px">
+        <span style="font-size:10px;letter-spacing:1.4px;font-weight:700;color:#bd713c">DEADLINE APPROACHING</span>
+        <h1 style="margin:12px 0 7px;font-size:27px;line-height:1.2">${daysBefore} day${daysBefore===1?"":"s"} left</h1>
+        <p style="margin:0;color:#777;font-size:13px;line-height:1.6">${tasks.length} open task${tasks.length===1?"":"s"} across your businesses are due ${dayLabel}, on <b style="color:#333">${esc(formatIsoDate(dueDate,prefs.timezone))}</b>.</p>
+        ${businessSections}
+        <p style="margin:24px 0 0"><a href="https://task.shakilxvs.com" style="display:inline-block;padding:12px 19px;border-radius:999px;background:#e60023;color:#fff;text-decoration:none;font-size:12px;font-weight:700">Open TaskXVS</a></p>
+        <p style="margin:18px 0 0;color:#999;font-size:10px">Reminder date: ${esc(formatIsoDate(sendDate,prefs.timezone))} · Time zone: ${esc(prefs.timezone)}</p>
+      </td></tr>
+      <tr><td style="padding:16px 26px;background:#fafaf8;border-top:1px solid #eee;color:#999;font-size:10px">Private owner reminder. This email is sent only to your configured owner email address.</td></tr>
+    </table></body></html>`;
+  return {to:[prefs.activity_email],subject,html,text};
+}
+async function sendOwnerDeadlineReminder(sendDate,daysBefore,prefs){
+  const runKey=`taskxvs-deadline-${sendDate}-${daysBefore}d`;
+  const dueDate=addIsoDays(sendDate,daysBefore);
+  const client=await pool.connect();
+  let inTransaction=false;
+  try{
+    await client.query("BEGIN");inTransaction=true;
+    const lock=await client.query("SELECT pg_try_advisory_xact_lock(hashtext($1)) AS locked",[runKey]);
+    if(!lock.rows[0]?.locked){await client.query("ROLLBACK");inTransaction=false;return;}
+    const prior=await client.query("SELECT status,email_payload FROM owner_reminder_email_runs WHERE run_key=$1 FOR UPDATE",[runKey]);
+    if(prior.rows[0]?.status==="sent"){await client.query("ROLLBACK");inTransaction=false;return;}
+    let payload=prior.rows[0]?.email_payload||null;
+    let taskCount=prior.rows[0]?.task_count||0;
+    if(!payload){
+      const result=await client.query(
+        `SELECT t.id::text,t.business_id::text,t.title,t.description,t.status,t.priority,t.deadline::text,
+                b.name AS business_name
+         FROM tasks t JOIN businesses b ON b.id=t.business_id
+         WHERE t.status<>'done' AND t.deadline=$1::date AND b.archived=false
+         ORDER BY lower(b.name),lower(t.title),t.created_at`,
+        [dueDate]
+      );
+      if(!result.rowCount){await client.query("ROLLBACK");inTransaction=false;return;}
+      taskCount=result.rowCount;
+      payload=buildDeadlineReminderEmail(result.rows,prefs,daysBefore,sendDate,dueDate);
+      await client.query(
+        `INSERT INTO owner_reminder_email_runs(run_key,local_date,days_before,recipient_email,status,task_count,email_payload,updated_at)
+         VALUES($1,$2::date,$3,$4,'sending',$5,$6::jsonb,now())
+         ON CONFLICT(run_key) DO UPDATE SET status='sending',recipient_email=EXCLUDED.recipient_email,
+           task_count=EXCLUDED.task_count,email_payload=EXCLUDED.email_payload,error_message=NULL,updated_at=now()`,
+        [runKey,sendDate,daysBefore,prefs.activity_email,taskCount,JSON.stringify(payload)]
+      );
+    }else{
+      await client.query("UPDATE owner_reminder_email_runs SET status='sending',error_message=NULL,updated_at=now() WHERE run_key=$1",[runKey]);
+    }
+    const providerId=await sendResendEmail(payload,runKey);
+    await client.query(
+      "UPDATE owner_reminder_email_runs SET status='sent',provider_id=$2,error_message=NULL,sent_at=now(),updated_at=now() WHERE run_key=$1",
+      [runKey,providerId]
+    );
+    await client.query("COMMIT");inTransaction=false;
+    console.log(`Owner deadline reminder sent: ${daysBefore} day(s), ${taskCount} task(s).`);
+  }catch(error){
+    if(inTransaction){
+      await client.query(
+        "UPDATE owner_reminder_email_runs SET status='failed',error_message=$2,updated_at=now() WHERE run_key=$1",
+        [runKey,String(error.message||error).slice(0,700)]
+      ).catch(()=>{});
+      await client.query("COMMIT").catch(()=>{});
+      inTransaction=false;
+    }
+    console.error("Owner deadline reminder failed:",error.message);
+  }finally{
+    if(inTransaction)await client.query("ROLLBACK").catch(()=>{});
+    client.release();
+  }
+}
+async function checkOwnerDeadlineReminders(){
+  try{
+    const prefs=await getOwnerNotificationPreferences();
+    if(!prefs.deadline_reminders_enabled||!prefs.activity_email||!RESEND_API_KEY||!RESEND_FROM)return;
+    const now=getZonedDateParts(prefs.timezone);
+    if(now.hour<9)return;
+    await sendOwnerDeadlineReminder(now.date,2,prefs);
+    await sendOwnerDeadlineReminder(now.date,1,prefs);
+  }catch(error){
+    console.error("Owner deadline reminder sweep failed:",error.message);
+  }
+}
 async function sendBusinessWhatsAppNotification(businessId,event,task) {
   try{
     const business=await businessRow(businessId);
