@@ -20,6 +20,14 @@ const SESSION_SECRET = process.env.SESSION_SECRET || "";
 const DATABASE_URL = process.env.DATABASE_URL || "";
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 const RESEND_FROM = process.env.RESEND_FROM || "";
+const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN || "";
+const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || "";
+const WHATSAPP_API_VERSION = process.env.WHATSAPP_API_VERSION || "";
+const WHATSAPP_TEMPLATE_NAME = process.env.WHATSAPP_TEMPLATE_NAME || "";
+const WHATSAPP_TEMPLATE_LANGUAGE = process.env.WHATSAPP_TEMPLATE_LANGUAGE || "en";
+const WHATSAPP_APP_SECRET = process.env.WHATSAPP_APP_SECRET || "";
+const WHATSAPP_WEBHOOK_VERIFY_TOKEN = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || "";
+const WHATSAPP_CONFIGURED = Boolean(WHATSAPP_ACCESS_TOKEN && WHATSAPP_PHONE_NUMBER_ID && WHATSAPP_API_VERSION && WHATSAPP_TEMPLATE_NAME);
 
 if (!DATABASE_URL || !OWNER_PASSWORD_SALT || !OWNER_PASSWORD_HASH || !SESSION_SECRET) {
   console.error("Required application secrets are missing.");
@@ -42,7 +50,7 @@ app.use(helmet({
   }},
   crossOriginEmbedderPolicy: false
 }));
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "1mb", verify:(req,res,buf)=>{req.rawBody=Buffer.from(buf);} }));
 
 function safeEqual(a, b) {
   const left = Buffer.from(String(a));
@@ -207,17 +215,17 @@ app.get("/api/account",requireAuth,async(req,res,next)=>{
     if(req.auth.role==="owner"){
       const result=await pool.query("SELECT setting_value FROM workspace_settings WHERE setting_key='owner_whatsapp' LIMIT 1");
       const value=result.rows[0]?.setting_value||{};
-      return res.set("Cache-Control","no-store").json({whatsapp_number:value.whatsapp_number||"",whatsapp_notifications_enabled:value.whatsapp_notifications_enabled!==false});
+      return res.set("Cache-Control","no-store").json({whatsapp_number:value.whatsapp_number||"",whatsapp_notifications_enabled:Boolean(value.whatsapp_notifications_enabled),whatsapp_configured:WHATSAPP_CONFIGURED});
     }
     const result=await pool.query("SELECT whatsapp_number,whatsapp_notifications_enabled FROM users WHERE id=$1",[req.auth.id]);
     if(!result.rowCount)return res.status(404).json({error:"Account not found."});
-    res.set("Cache-Control","no-store").json(result.rows[0]);
+    res.set("Cache-Control","no-store").json({...result.rows[0],whatsapp_configured:WHATSAPP_CONFIGURED});
   }catch(e){next(e);}
 });
 app.patch("/api/account",requireAuth,async(req,res,next)=>{
   try{
     const phone=normalizeWhatsAppNumber(req.body?.whatsapp_number);
-    const enabled=typeof req.body?.whatsapp_notifications_enabled==="boolean"?req.body.whatsapp_notifications_enabled:true;
+    const enabled=typeof req.body?.whatsapp_notifications_enabled==="boolean"?req.body.whatsapp_notifications_enabled:false;
     if(req.auth.role==="owner"){
       const value={whatsapp_number:phone||"",whatsapp_notifications_enabled:enabled};
       await pool.query("INSERT INTO workspace_settings(setting_key,setting_value,updated_at) VALUES ('owner_whatsapp',$1::jsonb,now()) ON CONFLICT(setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value,updated_at=now()",[JSON.stringify(value)]);
@@ -225,7 +233,7 @@ app.patch("/api/account",requireAuth,async(req,res,next)=>{
     }
     const result=await pool.query("UPDATE users SET whatsapp_number=$2,whatsapp_notifications_enabled=$3,updated_at=now() WHERE id=$1 RETURNING whatsapp_number,whatsapp_notifications_enabled",[req.auth.id,phone,enabled]);
     if(!result.rowCount)return res.status(404).json({error:"Account not found."});
-    res.json(result.rows[0]);
+    res.json({...result.rows[0],whatsapp_configured:WHATSAPP_CONFIGURED});
   }catch(e){next(e);}
 });
 app.post("/api/auth/logout", (_req, res) => {
@@ -261,6 +269,54 @@ async function sendBusinessNotification(business,event,task){
   return true;
  } catch(error){console.error("Task notification email error:",error.message);return false;}
 }
+async function sendBusinessWhatsAppNotification(businessId,event,task) {
+  if(!WHATSAPP_CONFIGURED)return;
+  try{
+    const business=await businessRow(businessId);
+    if(!business)return;
+    const recipients=[];
+    const ownerResult=await pool.query("SELECT setting_value FROM workspace_settings WHERE setting_key='owner_whatsapp' LIMIT 1");
+    const owner=ownerResult.rows[0]?.setting_value||{};
+    if(owner.whatsapp_number&&owner.whatsapp_notifications_enabled===true)recipients.push({userId:null,number:owner.whatsapp_number});
+    const members=await pool.query("SELECT DISTINCT u.id,u.whatsapp_number FROM users u JOIN business_assignments a ON a.user_id=u.id WHERE a.business_id=$1 AND u.active=true AND u.whatsapp_notifications_enabled=true AND u.whatsapp_number IS NOT NULL AND u.whatsapp_number<>''",[businessId]);
+    for(const member of members.rows)recipients.push({userId:member.id,number:member.whatsapp_number});
+    const unique=[...new Map(recipients.map(r=>[r.number.replace(/\\D/g,""),r])).values()];
+    const labels={"Task added":"Task added","Task updated":"Task updated","Task delayed":"Task delayed","Task done":"Task completed","In progress":"Task in progress","To do":"Task moved to To do","Task deleted":"Task deleted"};
+    const eventLabel=labels[event]||event;
+    const deadline=task?.deadline?String(task.deadline):"No deadline";
+    const status=task?.status==="done"?"Done":task?.status==="in_progress"?"In progress":"To do";
+    for(const recipient of unique){
+      let logId=null;
+      try{
+        const log=await pool.query("INSERT INTO whatsapp_notification_logs (recipient_user_id,business_id,task_id,event_type,recipient_number,status) VALUES ($1,$2,$3,$4,$5,'queued') RETURNING id",[recipient.userId,businessId,task?.id||null,event,recipient.number]);
+        logId=log.rows[0].id;
+        const payload={messaging_product:"whatsapp",recipient_type:"individual",to:recipient.number.replace(/\\D/g,""),type:"template",template:{name:WHATSAPP_TEMPLATE_NAME,language:{code:WHATSAPP_TEMPLATE_LANGUAGE},components:[{type:"body",parameters:[
+          {type:"text",text:String(eventLabel).slice(0,120)},
+          {type:"text",text:String(business.name).slice(0,120)},
+          {type:"text",text:String(task?.title||"Workspace update").slice(0,120)},
+          {type:"text",text:deadline.slice(0,80)},
+          {type:"text",text:status},
+          {type:"text",text:"https://task.shakilxvs.com"}
+        ]}]}};
+        const url="https://graph.facebook.com/"+WHATSAPP_API_VERSION+"/"+WHATSAPP_PHONE_NUMBER_ID+"/messages";
+        const response=await fetch(url,{method:"POST",headers:{Authorization:"Bearer "+WHATSAPP_ACCESS_TOKEN,"Content-Type":"application/json"},body:JSON.stringify(payload),signal:AbortSignal.timeout(12000)});
+        const body=await response.json().catch(()=>({}));
+        if(!response.ok){
+          const message=String(body?.error?.message||("Meta API returned HTTP "+response.status)).slice(0,1000);
+          await pool.query("UPDATE whatsapp_notification_logs SET status='failed',error_message=$2 WHERE id=$1",[logId,message]);
+          console.error("WhatsApp notification failed:",message);
+          continue;
+        }
+        const wamid=body?.messages?.[0]?.id||null;
+        await pool.query("UPDATE whatsapp_notification_logs SET status='sent',wamid=$2,sent_at=now() WHERE id=$1",[logId,wamid]);
+      }catch(error){
+        if(logId)await pool.query("UPDATE whatsapp_notification_logs SET status='failed',error_message=$2 WHERE id=$1",[logId,String(error.message||error).slice(0,1000)]).catch(()=>{});
+        console.error("WhatsApp notification error:",error.message);
+      }
+    }
+  }catch(error){console.error("WhatsApp recipient lookup failed:",error.message);}
+}
+
 async function businessRow(businessId) {
   const result = await pool.query("SELECT * FROM businesses WHERE id=$1", [businessId]);
   return result.rows[0] || null;
