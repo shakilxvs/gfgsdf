@@ -149,7 +149,7 @@ function Login({onLogin}) {
   </main>;
 }
 
-function TaskCard({task, category, business, today, onEdit, onDelete, onStatus}) {
+function TaskCard({task, category, business, today, onEdit, onDelete, onStatus, canWrite=true}) {
   const Icon = ICONS[category?.icon] || Tag;
   const overdue = isOverdue(task,today);
   const urgent = isDueSoon(task,today);
@@ -158,17 +158,15 @@ function TaskCard({task, category, business, today, onEdit, onDelete, onStatus})
       <div className="task-meta-left">{business && <span className="task-business">{business.name}</span>}
         <span className="category-chip" style={{"--chip-color":category?.color||"#668575"}}><Icon size={13}/>{category?.name||"Uncategorized"}</span>
       </div>
-      <div className="task-menu"><IconButton label="Edit task" onClick={onEdit}><Pencil size={15}/></IconButton><IconButton label="Delete task" onClick={onDelete}><MoreHorizontal size={17}/></IconButton></div>
+      {canWrite&&<div className="task-menu"><IconButton label="Edit task" onClick={onEdit}><Pencil size={15}/></IconButton><IconButton label="Delete task" onClick={onDelete}><MoreHorizontal size={17}/></IconButton></div>}
     </div>
-    <div className="task-title-line"><button className={`complete-control ${task.status==="done"?"complete-checked":""}`} aria-label={task.status==="done"?"Reopen task":"Mark complete"} onClick={()=>onStatus(task.status==="done"?"todo":"done")}>{task.status==="done"&&<Check size={13}/>}</button><h3>{task.title}</h3></div>
+    <div className="task-title-line">{canWrite&&<button className={`complete-control ${task.status==="done"?"complete-checked":""}`} aria-label={task.status==="done"?"Reopen task":"Mark complete"} onClick={()=>onStatus(task.status==="done"?"todo":"done")}>{task.status==="done"&&<Check size={13}/>}</button>}<h3>{task.title}</h3></div>
     {task.description && <p className="task-description">{task.description}</p>}
     <div className="task-badges">
-      {overdue?<span className="status-select status-delayed">Delayed</span>:<select className={`status-select status-${task.status}`} value={task.status} onChange={e=>onStatus(e.target.value)} aria-label="Change task status">
-        {STATUSES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}
-      </select>}
+      {overdue?<span className="status-select status-delayed">Delayed</span>:<span className={`task-card-status ${task.status==="done"?"status-done":task.status==="in_progress"?"status-progress":"status-todo"}`}>{displayStatus(task,today)}</span>}
+      {canWrite&&!overdue&&<select className={`status-select status-${task.status}`} value={task.status} onChange={e=>onStatus(e.target.value)} aria-label="Change task status">{STATUSES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select>}
       {task.priority!=="normal" && <span className={`priority-chip priority-${task.priority}`}>{priorityLabel(task.priority)} priority</span>}
-      {task.deadline && <span className={`deadline-chip ${overdue?"deadline-overdue":urgent?"deadline-urgent":""}`}><Clock3 size={12}/>{relativeDeadline(task,today)}</span>}
-      {!task.deadline && <span className="neutral-chip">No deadline</span>}
+      {task.deadline && <DeadlineView value={task.deadline} today={today}/>}
     </div>
     <div className="task-card-foot"><span><CalendarDays size={13}/>Created {formatDate(task.created_date)}</span>{task.deadline && <span>Due {formatDate(task.deadline,true)}</span>}</div>
   </article>;
@@ -387,6 +385,8 @@ function App() {
   const [businesses,setBusinesses]=useState([]);
   const [categories,setCategories]=useState([]);
   const [tasks,setTasks]=useState([]);
+  const [sessionUser,setSessionUser]=useState(null);
+  const [users,setUsers]=useState([]);
   const [active,setActive]=useState("overview");
   const [search,setSearch]=useState("");
   const [listMode,setListMode]=useState(true);
@@ -406,11 +406,12 @@ function App() {
     setLoading(true);
     try {
       const result=await api("/api/bootstrap");
-      setBusinesses(result.businesses||[]);setCategories(result.categories||[]);setTasks(result.tasks||[]);
+      setBusinesses(result.businesses||[]);setCategories(result.categories||[]);setTasks(result.tasks||[]);setSessionUser(result.user||null);
+      if(result.user?.role==="owner"){const u=await api("/api/admin/users");setUsers(u.users||[]);}else{setUsers([]);}
     } finally {setLoading(false);}
   }
   useEffect(()=>{
-    api("/api/auth/session").then(async s=>{if(s.authenticated){setAuthenticated(true);await refresh();}}).catch(()=>{}).finally(()=>setChecking(false));
+    api("/api/auth/session").then(async s=>{if(s.authenticated){setAuthenticated(true);setSessionUser(s.user||null);await refresh();}}).catch(()=>{}).finally(()=>setChecking(false));
   },[]);
   useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(""),2600);return()=>clearTimeout(t);},[toast]);
 
@@ -420,7 +421,7 @@ function App() {
   }
   async function logout() {
     try{await api("/api/auth/logout",{method:"POST",body:"{}"});}finally{
-      setAuthenticated(false);setBusinesses([]);setCategories([]);setTasks([]);setActive("overview");setSearch("");
+      setAuthenticated(false);setSessionUser(null);setUsers([]);setBusinesses([]);setCategories([]);setTasks([]);setActive("overview");setSearch("");
     }
   }
   function notify(message){setToast(message);}
@@ -428,14 +429,21 @@ function App() {
   async function updateTask(task,values){const result=await api(`/api/tasks/${task.id}`,{method:"PATCH",body:JSON.stringify(values)});setTasks(ts=>ts.map(t=>t.id===task.id?result:t));notify("Task updated");}
   async function removeTask(task){if(!confirm(`Delete “${task.title}” permanently?`))return;await api(`/api/tasks/${task.id}`,{method:"DELETE"});setTasks(ts=>ts.filter(t=>t.id!==task.id));notify("Task deleted");}
   async function changeStatus(task,status){const result=await api(`/api/tasks/${task.id}`,{method:"PATCH",body:JSON.stringify({...task,status})});setTasks(ts=>ts.map(t=>t.id===task.id?result:t));notify(status==="done"?"Task completed":"Task reopened");}
-  async function addBusiness(name){const b=await api("/api/businesses",{method:"POST",body:JSON.stringify({name})});setBusinesses(bs=>[...bs,b]);await refresh();setActive(b.id);notify("Business added");}
-  async function renameBusiness(b,name){const next=await api(`/api/businesses/${b.id}`,{method:"PATCH",body:JSON.stringify({name})});setBusinesses(bs=>bs.map(x=>x.id===b.id?next:x));notify("Business renamed");}
+  async function addBusiness(name,notification_email,email_notifications){const b=await api("/api/businesses",{method:"POST",body:JSON.stringify({name,notification_email,email_notifications})});await refresh();setActive(b.id);notify("Business added");}
+  async function renameBusiness(id,patch){const next=await api(`/api/businesses/${id}`,{method:"PATCH",body:JSON.stringify(patch)});setBusinesses(bs=>bs.map(x=>x.id===id?next:x));notify("Business updated");}
   async function archiveBusiness(b){const next=await api(`/api/businesses/${b.id}`,{method:"PATCH",body:JSON.stringify({archived:!b.archived})});setBusinesses(bs=>bs.map(x=>x.id===b.id?next:x));if(next.archived&&active===b.id)setActive("overview");notify(next.archived?"Business archived":"Business restored");}
-  async function deleteBusiness(b){const count=tasks.filter(t=>t.business_id===b.id).length;const ok=confirm(`Delete ${b.name}? This permanently removes its ${count} task(s) and categories.`);if(!ok)return;await api(`/api/businesses/${b.id}`,{method:"DELETE"});setBusinesses(bs=>bs.filter(x=>x.id!==b.id));setCategories(cs=>cs.filter(c=>c.business_id!==b.id));setTasks(ts=>ts.filter(t=>t.business_id!==b.id));if(active===b.id)setActive("overview");notify("Business deleted");}
+  async function deleteBusiness(b){await api(`/api/businesses/${b.id}`,{method:"DELETE"});setBusinesses(bs=>bs.filter(x=>x.id!==b.id));setCategories(cs=>cs.filter(c=>c.business_id!==b.id));setTasks(ts=>ts.filter(t=>t.business_id!==b.id));if(active===b.id)setActive("overview");notify("Business deleted");}
+  async function saveUser(id,data){const result=await api(id?`/api/admin/users/${id}`:"/api/admin/users",{method:id?"PATCH":"POST",body:JSON.stringify(data)});const latest=await api("/api/admin/users");setUsers(latest.users||[]);notify(id?"User updated":"User created");return result;}
+  async function toggleUser(user){await api(`/api/admin/users/${user.id}`,{method:"PATCH",body:JSON.stringify({active:!user.active})});const latest=await api("/api/admin/users");setUsers(latest.users||[]);notify(user.active?"User disabled":"User enabled");}
+  async function deleteUser(user){if(!confirm(`Delete account ${user.username}? They will immediately lose access.`))return;await api(`/api/admin/users/${user.id}`,{method:"DELETE"});setUsers(us=>us.filter(u=>u.id!==user.id));notify("User deleted");}
   async function addCategory(v){const c=await api("/api/categories",{method:"POST",body:JSON.stringify(v)});setCategories(cs=>[...cs,c]);notify("Category added");}
   async function editCategory(c,patch){const next=await api(`/api/categories/${c.id}`,{method:"PATCH",body:JSON.stringify(patch)});setCategories(cs=>cs.map(x=>x.id===c.id?next:x));notify("Category updated");}
   async function deleteCategory(c){const count=tasks.filter(t=>t.category_id===c.id).length;if(!confirm(`Delete “${c.name}”? ${count} task(s) will become uncategorized.`))return;await api(`/api/categories/${c.id}`,{method:"DELETE"});setCategories(cs=>cs.filter(x=>x.id!==c.id));setTasks(ts=>ts.map(t=>t.category_id===c.id?{...t,category_id:null}:t));notify("Category deleted");}
 
+  const isOwner=sessionUser?.role==="owner";
+  const canWriteBusiness=id=>isOwner||businesses.find(b=>b.id===id)?.permission==="write";
+  const activeCanWrite=active==="overview"?isOwner:canWriteBusiness(active);
+  const writableBusinesses=businesses.filter(b=>!b.archived&&canWriteBusiness(b.id));
   const pendingFor = id => tasks.filter(t=>t.business_id===id&&isOpen(t)).length;
   const progressFor = id => {
     const related=tasks.filter(t=>t.business_id===id);
@@ -464,7 +472,7 @@ function App() {
     return target>=from&&target<=to;
   });
   const overdueTasks=tasks.filter(t=>isOverdue(t,today)).sort((a,b)=>a.deadline.localeCompare(b.deadline));
-  const progressPercent=overviewTasks.length?Math.round(completedTasks.length/overviewTasks.length*100):0;
+  const progressPercent=0;
   const overviewTasksSorted=[...overviewTasks].sort((a,b)=>(a.deadline||"9999-12-31").localeCompare(b.deadline||"9999-12-31"));
   const urgentTasks=tasks.filter(t=>isDueSoon(t,today)|| (isOpen(t)&&t.priority==="urgent")).sort((a,b)=>(a.deadline||"9999").localeCompare(b.deadline||"9999"));
   const completedTasks=overviewTasks.filter(t=>t.status==="done");
@@ -496,17 +504,18 @@ function App() {
   function clearFilters(){setFilters({category:"",status:"",priority:"",deadlineState:"",dueFrom:"",dueTo:"",createdFrom:"",createdTo:"",sort:"deadline"});}
   function taskCard(t,withBusiness=false){
     const b=businesses.find(x=>x.id===t.business_id),c=categories.find(x=>x.id===t.category_id);
-    const props={task:t,category:c,business:withBusiness?b:null,today,
+    const canWrite=canWriteBusiness(t.business_id);
+    const props={task:t,category:c,business:withBusiness?b:null,today,canWrite,
       onEdit:()=>{setEditingTask(t);setModal("task");},
       onDelete:()=>removeTask(t),
       onStatus:status=>changeStatus(t,status)};
     return listMode?<TaskListRow key={t.id} {...props}/>:<TaskCard key={t.id} {...props}/>;
   }
   const activeFilterCount=Object.entries(filters).filter(([k,v])=>k!=="sort"&&Boolean(v)).length;
-  function openNewTask(){setEditingTask(null);if(active==="overview"&&!businesses.some(b=>!b.archived)){notify("Add a business first.");return;}setModal("task");}
+  function openNewTask(){setEditingTask(null);if(!writableBusinesses.length){notify("No business with write access is assigned to you.");return;}if(active!=="overview"&&!canWriteBusiness(active)){notify("This business is read-only.");return;}setModal("task");}
   function tabTo(id){setActive(id);clearFilters();setSearch("");setFiltersOpen(false);setMobileNav(false);}
   const headerTitle=search.trim()?"Search results":active==="overview"?"Overview":selectedBusiness?.name||"Overview";
-  const headerSub=search.trim()?"Across all your businesses":active==="overview"?"Your businesses, priorities and deadlines in one place":`Tasks and categories for ${selectedBusiness?.name||"this business"}`;
+  const headerSub=search.trim()?"Across your assigned businesses":active==="overview"?"Your workspace":selectedBusiness?.name||"Business";
 
   if(checking)return <div className="boot-screen"><div className="boot-mark">S</div><span>Preparing your workspace…</span></div>;
   if(!authenticated)return <Login onLogin={login}/>;
