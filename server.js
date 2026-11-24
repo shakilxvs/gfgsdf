@@ -255,9 +255,12 @@ async function getWhatsAppGatewayStatus() {
     "SELECT status,qr_data_url,phone_number,last_seen_at,last_error,updated_at FROM whatsapp_gateway.gateway_state WHERE id=true LIMIT 1"
   );
   const row=result.rows[0]||{};
+  const lastSeen=row.last_seen_at?new Date(row.last_seen_at).getTime():0;
+  const fresh=lastSeen>0&&(Date.now()-lastSeen)<45*60*1000;
+  const effectiveStatus=row.status==="connected"&&!fresh?"disconnected":(row.status||"disconnected");
   return {
-    status:row.status||"disconnected",
-    connected:row.status==="connected",
+    status:effectiveStatus,
+    connected:row.status==="connected"&&fresh,
     qr_data_url:row.qr_data_url||"",
     phone_number:row.phone_number||"",
     last_seen_at:row.last_seen_at||null,
