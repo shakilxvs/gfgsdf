@@ -585,7 +585,7 @@ function App() {
       <div className="sidebar-brand-row"><Brand collapsed={sidebarCollapsed}/><IconButton label={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"} className="sidebar-collapse-toggle" onClick={()=>setSidebarCollapsed(v=>!v)}>{sidebarCollapsed?<ChevronRight size={18}/>:<ChevronLeft size={18}/>}</IconButton></div>
       <label className="sidebar-search" title={sidebarCollapsed?"Search tasks":undefined}><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder={sidebarCollapsed?"Search":"Search tasks…"}/>{search&&<button type="button" aria-label="Clear search" onClick={()=>setSearch("")}><X size={14}/></button>}</label>
       <div className="sidebar-section-label">WORKSPACE</div>
-      <button className={`sidebar-link ${active==="overview"?"is-active":""}`} title="Overview" onClick={()=>tabTo("overview")}><LayoutDashboard size={18}/><span>Overview</span></button>
+      <button className={`sidebar-link ${active==="overview"?"is-active":""}`} title="Overview" onClick={()=>tabTo("overview")}><span className="overview-bullet"><LayoutDashboard size={17}/></span><span>Overview</span></button>
       <div className="sidebar-business-heading">
         <span>BUSINESSES</span>
         <div className="sidebar-business-tools">
