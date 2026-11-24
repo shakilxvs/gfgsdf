@@ -756,8 +756,8 @@ function App() {
   if(!authenticated)return <Login onLogin={login}/>;
   return <div className={`app-frame ${sidebarCollapsed?"app-collapsed":""}`}>
     <aside className={`sidebar ${mobileNav?"sidebar-open":""} ${sidebarCollapsed?"sidebar-collapsed":""}`}>
-      <div className="sidebar-brand-row"><Brand collapsed={sidebarCollapsed}/><IconButton label={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"} className="sidebar-collapse-toggle" onClick={()=>setSidebarCollapsed(v=>!v)}>{sidebarCollapsed?<ChevronRight size={18}/>:<ChevronLeft size={18}/>}</IconButton></div>
-      <label className="sidebar-search" title={sidebarCollapsed?"Search tasks":undefined}><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder={sidebarCollapsed?"Search":"Search tasks…"}/>{search&&<button type="button" aria-label="Clear search" onClick={()=>setSearch("")}><X size={14}/></button>}</label>
+      <div className="sidebar-brand-row"><Brand collapsed={sidebarCollapsed} onClick={()=>setSidebarCollapsed(v=>!v)}/></div>
+      {!sidebarCollapsed&&<label className="sidebar-search"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search tasks…"/>{search&&<button type="button" aria-label="Clear search" onClick={()=>setSearch("")}><X size={14}/></button>}</label>}
       <div className="sidebar-section-label">WORKSPACE</div>
       <button className={`sidebar-link sidebar-overview-link ${active==="overview"?"is-active":""}`} title="Overview" onClick={()=>tabTo("overview")}><span className="overview-bullet"><LayoutDashboard size={17}/></span><span>Overview</span></button>
       <div className="sidebar-business-heading">
@@ -770,6 +770,7 @@ function App() {
       <nav className="sidebar-business-list">{businesses.filter(b=>!b.archived).map(b=><button key={b.id} className={`sidebar-link ${active===b.id?"is-active":""}`} onClick={()=>tabTo(b.id)} title={b.name}><span className="business-bullet">{b.name.slice(0,1)}</span><span className="sidebar-business-name">{b.name}</span><span className="sidebar-count">{pendingFor(b.id)}</span></button>)}</nav>
       {canCreateBusiness&&<button className="sidebar-add-business" title="Add business" onClick={()=>setModal("businesses")}><Plus size={15}/><span>Add business</span></button>}
       <div className="sidebar-bottom">
+        {isOwner&&<button className="sidebar-link sidebar-admin-link" title="Settings" onClick={()=>setSettingsOpen(true)}><Settings2 size={17}/><span>Settings</span></button>}
         {isOwner&&<button className="sidebar-link sidebar-admin-link" title="Team access" onClick={()=>setModal("users")}><Users size={17}/><span>Team access</span></button>}
         <button type="button" className="owner-row owner-row-button" onClick={openAccount} title="My account"><div className="owner-avatar">{(sessionUser?.displayName||"X").slice(0,1).toUpperCase()}</div><div><strong>{sessionUser?.displayName||"User"}</strong><small>{isOwner?"Workspace owner":"Team member"}</small></div></button>
         <button className="sidebar-link logout-link" title="Sign out" onClick={logout}><LogOut size={16}/><span>Sign out</span></button>
@@ -786,7 +787,6 @@ function App() {
           </div>
         </nav>
         <div className="topbar-right">
-          {isOwner&&<button type="button" className="activity-trigger" aria-label="WhatsApp settings" title="WhatsApp settings" onClick={()=>setWhatsAppSettingsOpen(true)}><MessageCircle size={18}/></button>}
           {isOwner&&<button type="button" className="activity-trigger" aria-label="Workspace activity" title="Workspace activity" onClick={openActivity}><Bell size={18}/>{activityItems.filter(item=>!activitySeenAt||new Date(item.created_at).getTime()>Date.parse(activitySeenAt)).length>0&&<span>{activityItems.filter(item=>!activitySeenAt||new Date(item.created_at).getTime()>Date.parse(activitySeenAt)).length}</span>}</button>}
           {writableBusinesses.length>0&&<Button onClick={openNewTask}><Plus size={16}/> New task</Button>}
         </div>
@@ -814,11 +814,21 @@ function App() {
             <div className="progress-track"><i style={{width:overallProgress+"%"}}/></div>
           </div>
           <div className="overview-task-heading">
-            <strong>All tasks</strong><span>{overviewTasksSorted.length}</span><small>Overdue and completed tasks stay visible</small>
-            <div className="view-toggle"><button className={listMode?"selected":""} onClick={()=>setListMode(true)} aria-label="List view"><List size={16}/></button><button className={!listMode?"selected":""} onClick={()=>setListMode(false)} aria-label="Card view"><Grid2X2 size={16}/></button></div>
+            <strong>All tasks</strong><span>{overviewTasksSorted.length}</span>
+            <div className="overview-task-controls">
+              <div className="view-toggle"><button className={listMode?"selected":""} onClick={()=>setListMode(true)} aria-label="List view"><List size={16}/></button><button className={!listMode?"selected":""} onClick={()=>setListMode(false)} aria-label="Card view"><Grid2X2 size={16}/></button></div>
+              <button type="button" className={overviewFilterCount?"overview-filter-trigger is-active":"overview-filter-trigger"} aria-label="Filter and sort all tasks" title="Filter and sort all tasks" aria-expanded={overviewFiltersOpen} onClick={()=>setOverviewFiltersOpen(v=>!v)}><SlidersHorizontal size={17}/>{overviewFilterCount>0&&<span>{overviewFilterCount}</span>}</button>
+            </div>
           </div>
-          {loading?<div className="loading-block">Loading…</div>:overviewTasksSorted.length?<div className={listMode?"task-list-mode":"task-masonry"}>{overviewTasksSorted.map(t=>taskCard(t,true))}</div>:<EmptyState title="No tasks yet" description="Add a task to see it here." action={<Button onClick={openNewTask}><Plus size={15}/> Add task</Button>}/>}
-        </section> : selectedBusiness ? <section className="page-section">
+          {overviewFiltersOpen&&<div className="filters-panel overview-filters-panel">
+            <div className="filters-title"><div><SlidersHorizontal size={16}/><strong>Filter and sort tasks</strong></div><button type="button" onClick={clearOverviewFilters}>Clear all</button></div>
+            <div className="filters-grid overview-filters-grid">
+              <label className="filter-field"><span>Status</span><select value={overviewFilters.status} onChange={e=>setOverviewFilters(v=>({...v,status:e.target.value}))}><option value="all">All tasks</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="delayed">Delayed</option><option value="completed">Completed</option><option value="urgent">Urgent</option></select></label>
+              <label className="filter-field"><span>Priority</span><select value={overviewFilters.priority} onChange={e=>setOverviewFilters(v=>({...v,priority:e.target.value}))}><option value="all">Any priority</option><option value="urgent">Urgent</option><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option></select></label>
+              <label className="filter-field"><span>Sort by</span><select value={overviewFilters.sort} onChange={e=>setOverviewFilters(v=>({...v,sort:e.target.value}))}><option value="deadline">Deadline soonest</option><option value="deadline_latest">Deadline latest</option><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="updated">Recently updated</option><option value="priority_high">Priority: high to low</option><option value="priority_low">Priority: low to high</option><option value="title_az">Title: A to Z</option><option value="title_za">Title: Z to A</option></select></label>
+            </div>
+          </div>}
+          {loading?<div className="loading-block">Loading…</div>:overviewTasksSorted.length?<div className={listMode?"task-list-mode":"task-masonry"}>{overviewTasksSorted.map(t=>taskCard(t,true))}</div>:overviewTasks.length?<EmptyState title="No tasks match these filters" description="Adjust the filters or clear them to see your tasks." action={<Button variant="secondary" onClick={clearOverviewFilters}>Clear filters</Button>}/>:<EmptyState title="No tasks yet" description="Add a task to see it here." action={<Button onClick={openNewTask}><Plus size={15}/> Add task</Button>}/></section> : selectedBusiness ? <section className="page-section">
           <div className="business-hero business-hero-compact">
             <div className="business-summary"><strong>{tasks.filter(t=>t.business_id===active).length} tasks</strong><span>{progressFor(active).percent}% complete {selectedBusiness.permission==="read"&&" · Read only"}</span></div>
             <div className="business-actions">
@@ -857,7 +867,7 @@ function App() {
     {viewingTask&&<TaskDetails task={tasks.find(t=>t.id===viewingTask.id)||viewingTask} business={businesses.find(b=>b.id===viewingTask.business_id)} category={categories.find(c=>c.id===viewingTask.category_id)} today={today} canWrite={canWriteBusiness(viewingTask.business_id)} onClose={()=>setViewingTask(null)} onEdit={()=>{setEditingTask(tasks.find(t=>t.id===viewingTask.id)||viewingTask);setViewingTask(null);setModal("task");}} onComplete={()=>requestStatusChange(tasks.find(t=>t.id===viewingTask.id)||viewingTask,"done")}/>}
     {completingTask&&<CompleteTaskDialog task={completingTask} status={requestedStatus} note={completionNote} setNote={setCompletionNote} onCancel={()=>{setCompletingTask(null);setCompletionNote("");}} onConfirm={confirmCompletion} busy={completionBusy}/>}
     {activityOpen&&isOwner&&<ActivityFeed items={activityItems} onClose={()=>setActivityOpen(false)}/>}
-    {whatsAppSettingsOpen&&isOwner&&<WhatsAppCloudSettings onClose={()=>setWhatsAppSettingsOpen(false)} notify={notify}/>}
+    {settingsOpen&&isOwner&&<WorkspaceSettings onClose={()=>setSettingsOpen(false)} notify={notify} emailConfigured={emailConfigured}/>}
     {accountOpen&&<AccountSettings account={accountDetails||sessionUser} onClose={()=>setAccountOpen(false)} onSave={saveAccount}/>}
     {toast&&<div className="toast-message"><Check size={15}/>{toast}</div>}
   </div>;
