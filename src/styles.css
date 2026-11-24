@@ -1509,3 +1509,26 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .profile-account-summary strong { display:block; color:#222; font-size:13px; }
 .profile-account-summary small { display:block; margin-top:4px; color:#888; font-size:10px; }
 .user-manager-details small { overflow-wrap:anywhere; }
+
+
+.whatsapp-connection-state {
+  display:flex;
+  align-items:flex-start;
+  gap:9px;
+  padding:12px 13px;
+  border:1px solid #e8e8e4;
+  border-radius:12px;
+  font-size:11px;
+  line-height:1.55;
+}
+.whatsapp-connection-state svg { flex:0 0 16px; margin-top:1px; }
+.whatsapp-connection-state.pending {
+  color:#765a32;
+  border-color:#eee1ca;
+  background:#fffaf1;
+}
+.whatsapp-connection-state.connected {
+  color:#356b45;
+  border-color:#dce9df;
+  background:#f5faf6;
+}
