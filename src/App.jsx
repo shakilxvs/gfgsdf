@@ -767,6 +767,7 @@ function App() {
     {completingTask&&<CompleteTaskDialog task={completingTask} status={requestedStatus} note={completionNote} setNote={setCompletionNote} onCancel={()=>{setCompletingTask(null);setCompletionNote("");}} onConfirm={confirmCompletion} busy={completionBusy}/>}
     {activityOpen&&isOwner&&<ActivityFeed items={activityItems} onClose={()=>setActivityOpen(false)}/>}
     {accountOpen&&<AccountSettings account={accountDetails||sessionUser} onClose={()=>setAccountOpen(false)} onSave={saveAccount}/>}
+    {accountOpen&&<AccountSettings account={accountDetails||sessionUser} onClose={()=>setAccountOpen(false)} onSave={saveAccount}/>}
     {toast&&<div className="toast-message"><Check size={15}/>{toast}</div>}
   </div>;
 }
