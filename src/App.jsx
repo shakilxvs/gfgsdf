@@ -32,35 +32,21 @@ const ICONS = {
 };
 const COLORS = ["#d97737","#bd6c3f","#aa7955","#b86b45","#c28c49","#788d79","#927a9e","#6b8491"];
 
-const TIME_ZONE_OPTIONS = [
-  {value:"America/New_York",label:"New York · Eastern Time"},
-  {value:"America/Detroit",label:"Detroit · Eastern Time"},
-  {value:"America/Chicago",label:"Chicago · Central Time"},
-  {value:"America/Denver",label:"Denver · Mountain Time"},
-  {value:"America/Phoenix",label:"Phoenix · Arizona"},
-  {value:"America/Los_Angeles",label:"Los Angeles · Pacific Time"},
-  {value:"America/Anchorage",label:"Anchorage · Alaska"},
-  {value:"Pacific/Honolulu",label:"Honolulu · Hawaii"},
-  {value:"America/Toronto",label:"Toronto · Canada"},
-  {value:"America/Vancouver",label:"Vancouver · Canada"},
-  {value:"America/Sao_Paulo",label:"São Paulo · Brazil"},
-  {value:"Europe/London",label:"London · United Kingdom"},
-  {value:"Europe/Amsterdam",label:"Amsterdam · Netherlands"},
-  {value:"Europe/Paris",label:"Paris · France"},
-  {value:"Europe/Berlin",label:"Berlin · Germany"},
-  {value:"Europe/Istanbul",label:"Istanbul · Türkiye"},
-  {value:"Asia/Dubai",label:"Dubai · UAE"},
-  {value:"Asia/Dhaka",label:"Dhaka · Bangladesh"},
-  {value:"Asia/Kolkata",label:"Kolkata · India"},
-  {value:"Asia/Singapore",label:"Singapore"},
-  {value:"Asia/Bangkok",label:"Bangkok · Thailand"},
-  {value:"Asia/Shanghai",label:"Shanghai · China"},
-  {value:"Asia/Hong_Kong",label:"Hong Kong"},
-  {value:"Asia/Tokyo",label:"Tokyo · Japan"},
-  {value:"Asia/Seoul",label:"Seoul · South Korea"},
-  {value:"Australia/Sydney",label:"Sydney · Australia"},
-  {value:"Pacific/Auckland",label:"Auckland · New Zealand"}
+const TIME_ZONE_FALLBACK = [
+  "America/New_York","America/Detroit","America/Chicago","America/Denver","America/Phoenix",
+  "America/Los_Angeles","America/Anchorage","Pacific/Honolulu","America/Toronto","America/Vancouver",
+  "America/Sao_Paulo","Europe/London","Europe/Amsterdam","Europe/Paris","Europe/Berlin",
+  "Europe/Istanbul","Asia/Dubai","Asia/Dhaka","Asia/Kolkata","Asia/Singapore","Asia/Bangkok",
+  "Asia/Shanghai","Asia/Hong_Kong","Asia/Tokyo","Asia/Seoul","Australia/Sydney","Pacific/Auckland"
 ];
+const TIME_ZONE_VALUES = typeof Intl.supportedValuesOf === "function"
+  ? Intl.supportedValuesOf("timeZone")
+  : TIME_ZONE_FALLBACK;
+const TIME_ZONE_OPTIONS = TIME_ZONE_VALUES.map(value=>({
+  value,
+  label:value==="America/New_York"?"New York · Eastern Time":value.replaceAll("_"," ").replaceAll("/"," / ")
+}));
+
 const PRIORITIES = [
   { value:"low", label:"Low" }, { value:"normal", label:"Normal" },
   { value:"high", label:"High" }, { value:"urgent", label:"Urgent" }
