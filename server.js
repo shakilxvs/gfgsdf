@@ -904,7 +904,10 @@ app.use((err,_req,res,_next)=>{
 initDatabase().then(()=>{
   app.listen(PORT,"0.0.0.0",()=>console.log(`TaskXVS listening on ${PORT}`));
   checkDelayedTaskNotifications().catch(error=>console.error("Delayed task check failed:",error.message));
+  refreshTextMeFlowDeliveryStatuses().catch(error=>console.error("WhatsApp delivery status check failed:",error.message));
   const delayedTimer=setInterval(()=>checkDelayedTaskNotifications().catch(error=>console.error("Delayed task check failed:",error.message)),15*60*1000);
+  const whatsappStatusTimer=setInterval(()=>refreshTextMeFlowDeliveryStatuses().catch(error=>console.error("WhatsApp delivery status check failed:",error.message)),60*1000);
   delayedTimer.unref();
+  whatsappStatusTimer.unref();
 }).catch(error=>{console.error("Database initialization failed:",error);process.exit(1);});
 process.on("SIGTERM",async()=>{await pool.end();process.exit(0);});
