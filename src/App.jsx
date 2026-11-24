@@ -46,6 +46,35 @@ const TIME_ZONE_OPTIONS = TIME_ZONE_VALUES.map(value=>({
   value,
   label:value==="America/New_York"?"New York · Eastern Time":value.replaceAll("_"," ").replaceAll("/"," / ")
 }));
+const TIME_ZONE_SEARCH_ALIASES = {
+  "America/New_York":"United States USA New York New York State Eastern Eastern Time",
+  "America/Detroit":"United States USA Michigan Detroit Eastern",
+  "America/Chicago":"United States USA Illinois Texas Central Central Time",
+  "America/Denver":"United States USA Colorado Mountain Mountain Time",
+  "America/Phoenix":"United States USA Arizona Phoenix Mountain",
+  "America/Los_Angeles":"United States USA California Los Angeles Pacific Pacific Time",
+  "America/Anchorage":"United States USA Alaska Anchorage",
+  "Pacific/Honolulu":"United States USA Hawaii Honolulu",
+  "America/Toronto":"Canada Ontario Toronto Eastern",
+  "America/Vancouver":"Canada British Columbia Vancouver Pacific",
+  "America/Sao_Paulo":"Brazil Brasil Sao Paulo",
+  "Europe/London":"United Kingdom UK England London GMT",
+  "Europe/Amsterdam":"Netherlands Holland Amsterdam",
+  "Europe/Paris":"France Paris",
+  "Europe/Berlin":"Germany Deutschland Berlin",
+  "Europe/Istanbul":"Turkey Türkiye Istanbul",
+  "Asia/Dubai":"United Arab Emirates UAE Dubai",
+  "Asia/Dhaka":"Bangladesh Dhaka",
+  "Asia/Kolkata":"India Kolkata Delhi Mumbai Indian Standard Time",
+  "Asia/Singapore":"Singapore",
+  "Asia/Bangkok":"Thailand Bangkok",
+  "Asia/Shanghai":"China Shanghai Beijing",
+  "Asia/Hong_Kong":"Hong Kong China",
+  "Asia/Tokyo":"Japan Tokyo",
+  "Asia/Seoul":"South Korea Korea Seoul",
+  "Australia/Sydney":"Australia Sydney New South Wales",
+  "Pacific/Auckland":"New Zealand Auckland"
+};
 
 const PRIORITIES = [
   { value:"low", label:"Low" }, { value:"normal", label:"Normal" },
@@ -420,11 +449,11 @@ function WorkspaceSettings({onClose,notify,emailConfigured}) {
   const filteredTimezoneOptions=useMemo(()=>{
     const query=timezoneSearch.trim().toLocaleLowerCase();
     if(!query)return TIME_ZONE_OPTIONS;
-    return TIME_ZONE_OPTIONS.filter(item=>
-      item.label.toLocaleLowerCase().includes(query)
-      ||item.value.toLocaleLowerCase().includes(query)
-      ||item.value.split("/").pop().replaceAll("_"," ").toLocaleLowerCase().includes(query)
-    );
+    return TIME_ZONE_OPTIONS.filter(item=>{
+      const city=item.value.split("/").pop().replaceAll("_"," ");
+      const searchable=[item.label,item.value,city,TIME_ZONE_SEARCH_ALIASES[item.value]||""].join(" ").toLocaleLowerCase();
+      return searchable.includes(query);
+    });
   },[timezoneSearch]);
   useEffect(()=>{
     let active=true;
@@ -574,7 +603,7 @@ function WorkspaceSettings({onClose,notify,emailConfigured}) {
                   spellCheck="false"
                   aria-label="Search time zones"
                   aria-controls="timezone-picker-options"
-                  aria-activedescendant={filteredTimezoneOptions[timezoneActiveIndex]?\`timezone-option-\${filteredTimezoneOptions[timezoneActiveIndex].value.replaceAll("/","-")}\`:undefined}
+                  aria-activedescendant={filteredTimezoneOptions[timezoneActiveIndex] ? `timezone-option-${filteredTimezoneOptions[timezoneActiveIndex].value.replaceAll("/","-")}` : undefined}
                 />
                 {timezoneSearch&&<button type="button" className="timezone-picker-clear" onClick={()=>{setTimezoneSearch("");setTimezoneActiveIndex(0);}} aria-label="Clear search"><X size={14}/></button>}
               </div>
