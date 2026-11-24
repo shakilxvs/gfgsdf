@@ -563,7 +563,13 @@ function App() {
   const [emailConfigured,setEmailConfigured]=useState(false);
   const [accountDetails,setAccountDetails]=useState(null);
   const [accountOpen,setAccountOpen]=useState(false);
-  const [active,setActive]=useState("overview");
+  const [active,setActive]=useState(()=>{
+    try{
+      return new URLSearchParams(window.location.search).get("business")||"overview";
+    }catch{
+      return "overview";
+    }
+  });
   const [search,setSearch]=useState("");
   const [listMode,setListMode]=useState(true);
   const [sidebarCollapsed,setSidebarCollapsed]=useState(false);
@@ -599,6 +605,32 @@ function App() {
   }
   useEffect(()=>{
     api("/api/auth/session").then(async s=>{if(s.authenticated){setAuthenticated(true);setSessionUser(s.user||null);await refresh();}}).catch(()=>{}).finally(()=>setChecking(false));
+  },[]);
+  useEffect(()=>{
+    try{
+      const url=new URL(window.location.href);
+      if(active==="overview")url.searchParams.delete("business");
+      else url.searchParams.set("business",active);
+      window.history.replaceState(window.history.state,"",url.toString());
+    }catch{}
+  },[active]);
+  useEffect(()=>{
+    if(!authenticated||checking||loading)return;
+    if(active!=="overview"&&!businesses.some(b=>b.id===active&&!b.archived)){
+      setActive("overview");
+    }
+  },[active,businesses,authenticated,checking,loading]);
+  useEffect(()=>{
+    const handlePopState=()=>{
+      const businessId=new URLSearchParams(window.location.search).get("business")||"overview";
+      setActive(businessId);
+      setSearch("");
+      setFiltersOpen(false);
+      setOverviewFiltersOpen(false);
+      clearFilters();
+    };
+    window.addEventListener("popstate",handlePopState);
+    return ()=>window.removeEventListener("popstate",handlePopState);
   },[]);
   useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(""),2600);return()=>clearTimeout(t);},[toast]);
 
@@ -767,7 +799,21 @@ function App() {
   }
   const activeFilterCount=Object.entries(filters).filter(([k,v])=>k!=="sort"&&Boolean(v)).length;
   function openNewTask(){setEditingTask(null);if(!writableBusinesses.length){notify("No business with write access is assigned to you.");return;}if(active!=="overview"&&!canWriteBusiness(active)){notify("This business is read-only.");return;}setModal("task");}
-  function tabTo(id){setActive(id);clearFilters();setSearch("");setFiltersOpen(false);setMobileNav(false);}
+  function tabTo(id){
+    if(id!==active){
+      try{
+        const url=new URL(window.location.href);
+        if(id==="overview")url.searchParams.delete("business");
+        else url.searchParams.set("business",id);
+        window.history.pushState({taskxvsWorkspace:id},"",url.toString());
+      }catch{}
+    }
+    setActive(id);
+    clearFilters();
+    setSearch("");
+    setFiltersOpen(false);
+    setMobileNav(false);
+  }
   const headerTitle=search.trim()?"Search results":active==="overview"?"Overview":selectedBusiness?.name||"Overview";
   const headerSub=search.trim()?"Across your assigned businesses":active==="overview"?"Your workspace":selectedBusiness?.name||"Business";
 
