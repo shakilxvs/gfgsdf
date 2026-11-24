@@ -521,34 +521,43 @@ function App() {
   if(!authenticated)return <Login onLogin={login}/>;
   return <div className={`app-frame ${sidebarCollapsed?"app-collapsed":""}`}>
     <aside className={`sidebar ${mobileNav?"sidebar-open":""} ${sidebarCollapsed?"sidebar-collapsed":""}`}>
-      <Brand/>
+      <div className="sidebar-brand-row"><Brand collapsed={sidebarCollapsed}/><IconButton label={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"} className="sidebar-collapse-toggle" onClick={()=>setSidebarCollapsed(v=>!v)}>{sidebarCollapsed?<PanelLeftOpen size={18}/>:<PanelLeftClose size={18}/>}</IconButton></div>
+      <label className="sidebar-search"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder={sidebarCollapsed?"Search":"Search tasks…"}/>{search&&<button type="button" aria-label="Clear search" onClick={()=>setSearch("")}><X size={14}/></button>}</label>
       <div className="sidebar-section-label">WORKSPACE</div>
-      <button className={`sidebar-link ${active==="overview"?"is-active":""}`} onClick={()=>tabTo("overview")}><LayoutDashboard size={17}/>Overview</button>
-      <div className="sidebar-business-heading"><span>YOUR BUSINESSES</span><button onClick={()=>setModal("businesses")} aria-label="Manage businesses"><Plus size={15}/></button></div>
-      <nav className="sidebar-business-list">{businesses.filter(b=>!b.archived).map(b=><button key={b.id} className={`sidebar-link ${active===b.id?"is-active":""}`} onClick={()=>tabTo(b.id)}><span className="business-bullet">{b.name.slice(0,1)}</span><span className="sidebar-business-name">{b.name}</span><span className="sidebar-count">{pendingFor(b.id)}</span></button>)}</nav>
-      <button className="sidebar-add-business" onClick={()=>setModal("businesses")}><Plus size={15}/> Add business</button>
-      <div className="sidebar-bottom"><div className="owner-row"><div className="owner-avatar">S</div><div><strong>Shakil</strong><small>Workspace owner</small></div></div><button className="sidebar-link logout-link" onClick={logout}><LogOut size={16}/>Sign out</button></div>
+      <button className={`sidebar-link ${active==="overview"?"is-active":""}`} onClick={()=>tabTo("overview")}><LayoutDashboard size={18}/><span>Overview</span></button>
+      <div className="sidebar-business-heading"><span>BUSINESSES</span>{isOwner&&<button onClick={()=>setModal("businesses")} aria-label="Add business"><Plus size={15}/></button>}</div>
+      <nav className="sidebar-business-list">{businesses.filter(b=>!b.archived).map(b=><button key={b.id} className={`sidebar-link ${active===b.id?"is-active":""}`} onClick={()=>tabTo(b.id)} title={b.name}><span className="business-bullet">{b.name.slice(0,1)}</span><span className="sidebar-business-name">{b.name}</span><span className="sidebar-count">{pendingFor(b.id)}</span></button>)}</nav>
+      {isOwner&&<button className="sidebar-add-business" onClick={()=>setModal("businesses")}><Plus size={15}/><span>Add business</span></button>}
+      <div className="sidebar-bottom">
+        {isOwner&&<button className="sidebar-link sidebar-admin-link" onClick={()=>setModal("users")}><Users size={17}/><span>Team access</span></button>}
+        <div className="owner-row"><div className="owner-avatar">{(sessionUser?.displayName||"X").slice(0,1).toUpperCase()}</div><div><strong>{sessionUser?.displayName||"User"}</strong><small>{isOwner?"Workspace owner":"Team member"}</small></div></div>
+        <button className="sidebar-link logout-link" onClick={logout}><LogOut size={16}/><span>Sign out</span></button>
+      </div>
     </aside>
     {mobileNav&&<button className="mobile-scrim" onClick={()=>setMobileNav(false)} aria-label="Close menu"/>}
     <main className="main-area">
       <header className="topbar">
-        <div className="topbar-left">
-          <IconButton label={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"} className="sidebar-collapse-toggle" onClick={()=>setSidebarCollapsed(v=>!v)}><PanelLeftClose size={18}/></IconButton>
-          <IconButton label="Open menu" className="mobile-menu-button" onClick={()=>setMobileNav(true)}><Menu size={18}/></IconButton>
+        <div className="topbar-main">
+          <div className="topbar-left"><IconButton label="Open menu" className="mobile-menu-button" onClick={()=>setMobileNav(true)}><Menu size={18}/></IconButton><span className="header-workspace-label">TASKXVS <small>SHAKILXVS</small></span></div>
+          <div className="topbar-right">
+            {writableBusinesses.length>0&&<Button onClick={openNewTask}><Plus size={16}/> New task</Button>}
+            <div className="header-user"><span>{(sessionUser?.displayName||"X").slice(0,1).toUpperCase()}</span></div>
+          </div>
         </div>
-        <div className="topbar-right"><label className="global-search"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search tasks, details…" aria-label="Search all tasks"/>{search&&<button onClick={()=>setSearch("")} aria-label="Clear search"><X size={14}/></button>}</label><Button onClick={openNewTask}><Plus size={16}/> New task</Button><IconButton label="Sign out" className="top-logout" onClick={logout}><LogOut size={17}/></IconButton></div>
+        <nav className="business-tabs" aria-label="Business workspaces">
+          <div className="business-tabs-scroll">
+            <button className={`business-tab ${active==="overview"&&!search?"tab-active":""}`} onClick={()=>tabTo("overview")}><LayoutDashboard size={16}/><span>Overview</span></button>
+            {businesses.filter(b=>!b.archived).map(b=>{const p=progressFor(b.id);return <button key={b.id} title={`${b.name}: ${p.percent}% complete`} className={`business-tab ${active===b.id&&!search?"tab-active":""}`} onClick={()=>tabTo(b.id)}><span className="tab-label">{b.name}<span className="tab-counter">{pendingFor(b.id)}</span></span><span className="business-tab-progress"><i style={{width:p.percent+"%"}}/></span></button>})}
+            {isOwner&&<button className="business-tab tab-add" onClick={()=>setModal("businesses")}><Plus size={15}/><span>Business</span></button>}
+          </div>
+          {isOwner&&<button className="manage-businesses" onClick={()=>setModal("businesses")}><Settings size={15}/><span>Manage</span></button>}
+        </nav>
       </header>
       <div className="main-scroll">
-        <div className="business-tabs">
-          <button className={`business-tab ${active==="overview"&&!search?"tab-active":""}`} onClick={()=>tabTo("overview")}><LayoutDashboard size={15}/>Overview</button>
-          {businesses.filter(b=>!b.archived).map(b=>{const p=progressFor(b.id);return <button key={b.id} title={`${b.name}: ${p.percent}% complete`} className={`business-tab ${active===b.id&&!search?"tab-active":""}`} onClick={()=>tabTo(b.id)}><span className="tab-label">{b.name}<span className="tab-counter">{pendingFor(b.id)}</span></span><span className="business-tab-progress"><i style={{width:p.percent+"%"}}/></span></button>})}
-          <button className="business-tab tab-add" onClick={()=>setModal("businesses")}><Plus size={15}/>Business</button>
-          <span className="tabs-spacer"/>
-          <button className="manage-businesses" onClick={()=>setModal("businesses")}><Settings size={14}/> Manage</button>
-        </div>
+
 
         {search.trim()? <section className="page-section">
-          <div className="section-heading"><div><span className="eyebrow">GLOBAL SEARCH</span><h2>Results for “{search.trim()}”</h2><p>{searchResults.length} matching {searchResults.length===1?"task":"tasks"} across all businesses.</p></div></div>
+          <div className="section-heading"><div><h2>Search results</h2><p>{searchResults.length} tasks</p></div></div>
           {searchResults.length?<div className={listMode?"task-list-mode":"task-masonry"}>{searchResults.map(t=>taskCard(t,true))}</div>:<EmptyState title="No matches found" description="Try another keyword or search for a business, category or task detail."/>}
         </section> : active==="overview" ? <section className="page-section">
           <div className="overview-toolbar">
@@ -573,17 +582,17 @@ function App() {
           {loading?<div className="loading-block">Loading…</div>:overviewTasksSorted.length?<div className={listMode?"task-list-mode":"task-masonry"}>{overviewTasksSorted.map(t=>taskCard(t,true))}</div>:<EmptyState title="No tasks yet" description="Add a task to see it here." action={<Button onClick={openNewTask}><Plus size={15}/> Add task</Button>}/>}
         </section> : selectedBusiness ? <section className="page-section">
           <div className="business-hero business-hero-compact">
-            <div className="business-summary"><strong>{tasks.filter(t=>t.business_id===active).length} tasks</strong><span>{progressFor(active).percent}% complete</span></div>
+            <div className="business-summary"><strong>{tasks.filter(t=>t.business_id===active).length} tasks</strong><span>{progressFor(active).percent}% complete {selectedBusiness.permission==="read"&&" · Read only"}</span></div>
             <div className="business-actions">
               <div className="view-toggle"><button className={listMode?"selected":""} onClick={()=>setListMode(true)} aria-label="List view"><List size={16}/></button><button className={!listMode?"selected":""} onClick={()=>setListMode(false)} aria-label="Card view"><Grid2X2 size={16}/></button></div>
-              <IconButton label="Filters" className={`filter-toggle ${activeFilterCount?"filter-active":""}`} onClick={()=>setFiltersOpen(v=>!v)}><Filter size={17}/>{activeFilterCount>0&&<span>{activeFilterCount}</span>}</IconButton>
-              <Button variant="secondary" onClick={()=>setModal("categories")}><Tag size={15}/> Categories</Button>
-              <Button onClick={openNewTask}><Plus size={16}/> Add task</Button>
+              {activeCanWrite&&<IconButton label="Filters" className={`filter-toggle ${activeFilterCount?"filter-active":""}`} onClick={()=>setFiltersOpen(v=>!v)}><Filter size={17}/>{activeFilterCount>0&&<span>{activeFilterCount}</span>}</IconButton>}
+              {activeCanWrite&&<Button variant="secondary" onClick={()=>setModal("categories")}><Tag size={15}/> Categories</Button>}
+              {activeCanWrite&&<Button onClick={openNewTask}><Plus size={16}/> Add task</Button>
             </div>
           </div>
           <div className="progress-panel business-progress-panel"><div className="progress-heading"><strong>Progress</strong><span>{progressFor(active).percent}% · {progressFor(active).done}/{progressFor(active).total} done</span></div><div className="progress-track"><i style={{width:progressFor(active).percent+"%"}}/></div></div>
           <div className="business-stats"><MiniStat label="Open" value={tasks.filter(t=>t.business_id===active&&isOpen(t)).length}/><MiniStat label="Urgent" value={tasks.filter(t=>t.business_id===active&&(isDueSoon(t,today)||(isOpen(t)&&t.priority==="urgent"))).length}/><MiniStat label="Delayed" value={tasks.filter(t=>t.business_id===active&&isOverdue(t,today)).length}/><MiniStat label="Done" value={tasks.filter(t=>t.business_id===active&&t.status==="done").length}/></div>
-          {filtersOpen&&<div className="filters-panel">
+          {filtersOpen&&activeCanWrite&&<div className="filters-panel">
             <div className="filters-title"><div><SlidersHorizontal size={16}/><strong>Filter tasks</strong></div><button onClick={clearFilters}>Clear all</button></div>
             <div className="filters-grid">
               <label className="filter-field"><span>Category</span><select value={filters.category} onChange={e=>setFilters(f=>({...f,category:e.target.value}))}><option value="">All categories</option>{categories.filter(c=>c.business_id===active).map(c=><option value={c.id} key={c.id}>{c.name}</option>)}</select></label>
@@ -603,9 +612,10 @@ function App() {
         </section> : <EmptyState title="No business selected" description="Add a business to get started." action={<Button onClick={()=>setModal("businesses")}>Add business</Button>}/>}
       </div>
     </main>
-    {modal==="task"&&<TaskForm task={editingTask} businesses={businesses} categories={categories} defaultBusiness={active==="overview"?businesses.find(b=>!b.archived)?.id:active} onClose={()=>setModal(null)} onSave={values=>editingTask?updateTask(editingTask,values):addTask(values)}/>}
-    {modal==="categories"&&selectedBusiness&&<CategoryManager business={selectedBusiness} categories={categories} onClose={()=>setModal(null)} onAdd={addCategory} onEdit={editCategory} onDelete={deleteCategory}/>}
-    {modal==="businesses"&&<BusinessManager businesses={businesses} onClose={()=>setModal(null)} onAdd={addBusiness} onRename={renameBusiness} onArchive={archiveBusiness} onDelete={deleteBusiness}/>}
+    {modal==="task"&&<TaskForm task={editingTask} businesses={writableBusinesses} categories={categories} defaultBusiness={active==="overview"?writableBusinesses[0]?.id:active} onClose={()=>setModal(null)} onSave={values=>editingTask?updateTask(editingTask,values):addTask(values)}/>}
+    {modal==="categories"&&selectedBusiness&&activeCanWrite&&<CategoryManager business={selectedBusiness} categories={categories} onClose={()=>setModal(null)} onAdd={addCategory} onEdit={editCategory} onDelete={deleteCategory}/>}
+    {modal==="businesses"&&isOwner&&<BusinessManager businesses={businesses} onClose={()=>setModal(null)} onAdd={addBusiness} onRename={renameBusiness} onArchive={archiveBusiness} onDelete={deleteBusiness}/>}
+    {modal==="users"&&isOwner&&<UserManager users={users} businesses={businesses} onClose={()=>setModal(null)} onSave={saveUser} onDelete={deleteUser} onToggle={toggleUser}/>}
     {toast&&<div className="toast-message"><Check size={15}/>{toast}</div>}
   </div>;
 }
