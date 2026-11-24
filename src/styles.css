@@ -582,7 +582,7 @@ body { background:#f5efe6; color:#332d26; }
 .sidebar-collapsed { width:76px!important; min-width:76px!important; padding:16px 9px 12px!important; }
 .sidebar-collapsed .sidebar-brand-row { justify-content:center; flex-direction:column; gap:4px; }
 .sidebar-collapsed .brand-lockup { justify-content:center; padding:0!important; flex:none; }
-.sidebar-collapsed .brand-lockup > div:last-child { display:none; }
+.sidebar-collapsed .brand-lockup .brand-name { display:none; }
 .sidebar-collapsed .sidebar-collapse-toggle { margin:0 auto 9px; }
 .sidebar-collapsed .sidebar-search { width:42px; height:42px; margin:0 auto 16px; padding:0; justify-content:center; border-radius:13px; }
 .sidebar-collapsed .sidebar-search input,.sidebar-collapsed .sidebar-search button { display:none; }
@@ -738,7 +738,7 @@ body { background:#f5efe6; color:#332d26; }
   .sidebar { position:fixed; left:0; top:0; bottom:0; width:252px; min-width:252px; height:100vh; transform:translateX(-105%); transition:transform .2s ease; z-index:20; }
   .sidebar.sidebar-open { transform:translateX(0); }
   .sidebar-collapsed { width:252px!important; min-width:252px!important; padding:19px 14px 14px!important; }
-  .sidebar-collapsed .brand-lockup > div:last-child,.sidebar-collapsed .sidebar-search input,
+  .sidebar-collapsed .brand-lockup .brand-name,.sidebar-collapsed .sidebar-search input,
   .sidebar-collapsed .sidebar-search button,.sidebar-collapsed .sidebar-section-label,
   .sidebar-collapsed .sidebar-business-heading,.sidebar-collapsed .sidebar-business-name,
   .sidebar-collapsed .sidebar-count,.sidebar-collapsed .sidebar-add-business,
@@ -905,7 +905,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .sidebar-collapsed { width:76px!important; min-width:76px!important; padding:16px 9px 12px!important; }
 .sidebar-collapsed .sidebar-brand-row { justify-content:center; flex-direction:column; gap:7px; padding:0; }
 .sidebar-collapsed .brand-lockup { justify-content:center; padding:0!important; flex:none; }
-.sidebar-collapsed .brand-lockup > div:last-child { display:none; }
+.sidebar-collapsed .brand-lockup .brand-name { display:none; }
 .sidebar-collapsed .sidebar-collapse-toggle { margin:0 auto 2px; }
 .sidebar-collapsed .sidebar-search {
   width:44px; height:44px; padding:0; margin:0 auto 15px;
@@ -1126,7 +1126,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .sidebar { position:fixed; left:0; top:0; bottom:0; width:248px; min-width:248px; height:100vh; transform:translateX(-105%); transition:transform .2s ease; z-index:30; }
   .sidebar.sidebar-open { transform:translateX(0); }
   .sidebar-collapsed { width:248px!important; min-width:248px!important; padding:18px 12px 14px!important; }
-  .sidebar-collapsed .brand-lockup > div:last-child,.sidebar-collapsed .sidebar-search input,
+  .sidebar-collapsed .brand-lockup .brand-name,.sidebar-collapsed .sidebar-search input,
   .sidebar-collapsed .sidebar-search button,.sidebar-collapsed .sidebar-section-label,
   .sidebar-collapsed .sidebar-business-heading,.sidebar-collapsed .sidebar-business-name,
   .sidebar-collapsed .sidebar-count,.sidebar-collapsed .sidebar-add-business,
@@ -1224,7 +1224,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 @media (max-width:900px) {
   .sidebar.sidebar-collapsed { width:248px!important; min-width:248px!important; padding:18px 12px 14px!important; }
   .sidebar.sidebar-collapsed .sidebar-brand-row { flex-direction:row; justify-content:space-between; gap:8px; padding:0 4px; }
-  .sidebar.sidebar-collapsed .brand-lockup > div:last-child,
+  .sidebar.sidebar-collapsed .brand-lockup .brand-name,
   .sidebar.sidebar-collapsed .sidebar-search input,
   .sidebar.sidebar-collapsed .sidebar-section-label,
   .sidebar.sidebar-collapsed .sidebar-business-heading,
@@ -1433,4 +1433,41 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
     color:#111;
   }
   .sidebar.sidebar-collapsed .sidebar-overview-link > span:last-child { display:initial !important; }
+}
+
+
+/* Keep the red TaskXVS mark visible in the collapsed sidebar brand slot.
+   The name is conditional in React, so never hide the last generic child:
+   in collapsed mode the mark is the only child. */
+.sidebar.sidebar-collapsed .sidebar-brand-row .brand-lockup {
+  display:flex;
+  width:42px;
+  min-width:42px;
+  height:42px;
+  flex:0 0 42px;
+  align-items:center;
+  justify-content:center;
+  padding:0!important;
+  margin:0 auto;
+  overflow:visible;
+}
+.sidebar.sidebar-collapsed .sidebar-brand-row .brand-symbol {
+  display:grid!important;
+  width:38px;
+  min-width:38px;
+  height:38px;
+  flex:0 0 38px;
+  place-items:center;
+  margin:0;
+  border-radius:12px;
+  background:#e60023!important;
+  color:#fff!important;
+}
+.sidebar.sidebar-collapsed .sidebar-brand-row .brand-symbol svg {
+  display:block;
+  width:20px;
+  height:20px;
+}
+.sidebar.sidebar-collapsed .sidebar-brand-row .brand-lockup .brand-name {
+  display:none!important;
 }
