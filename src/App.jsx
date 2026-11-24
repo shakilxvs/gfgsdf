@@ -432,7 +432,7 @@ function WhatsAppCloudSettings({onClose,notify}) {
       </div>}
       <div className="whatsapp-cloud-steps">
         <strong>How this free setup works</strong>
-        <p>GitHub's free public-repository runner hosts the connection in scheduled sessions. Messages wait in the database queue and are sent when the worker is online.</p>
+        <p>GitHub's free public-repository runner hosts the connection in scheduled sessions. Messages wait in the database queue. The worker checks every 20 minutes to preserve the free database allowance, so delivery may be delayed by up to 20 minutes while a worker session is active.</p>
         <p>There may be short gaps between sessions or when GitHub delays a scheduled run. This is not a guaranteed 24/7 connection.</p>
       </div>
       {error&&<div className="form-error">{error}</div>}
