@@ -441,8 +441,8 @@ function App() {
             <Metric icon={<CircleAlert size={17}/>} label="Delayed" value={overdueTasks.length} tone="coral"/>
           </div>
           <div className="progress-panel">
-            <div className="progress-heading"><strong>Overall progress</strong><span>{progressPercent}% · {completedTasks.length}/{overviewTasks.length} done</span></div>
-            <div className="progress-track"><i style={{width:progressPercent+"%"}}/></div>
+            <div className="progress-heading"><strong>Overall progress</strong><span>{overallProgress}% · {tasks.filter(t=>t.status==="done").length}/{tasks.length} done</span></div>
+            <div className="progress-track"><i style={{width:overallProgress+"%"}}/></div>
           </div>
           <div className="overview-task-heading">
             <strong>All tasks</strong><span>{overviewTasksSorted.length}</span>
