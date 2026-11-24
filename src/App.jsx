@@ -337,12 +337,12 @@ function UserManager({users,businesses,onClose,onSave,onDelete,onToggle}) {
   const [displayName,setDisplayName]=useState("");
   const [email,setEmail]=useState("");
   const [whatsappNumber,setWhatsappNumber]=useState("");
-  const [whatsappEnabled,setWhatsappEnabled]=useState(true);
+  const [whatsappEnabled,setWhatsappEnabled]=useState(false);
   const [password,setPassword]=useState("");
   const [assignments,setAssignments]=useState({});
   const [error,setError]=useState("");
   const [busy,setBusy]=useState(false);
-  function reset(){setEditing(null);setUsername("");setDisplayName("");setEmail("");setWhatsappNumber("");setWhatsappEnabled(true);setPassword("");setAssignments({});setError("");}
+  function reset(){setEditing(null);setUsername("");setDisplayName("");setEmail("");setWhatsappNumber("");setWhatsappEnabled(false);setPassword("");setAssignments({});setError("");}
   function edit(u){
     setEditing(u);setUsername(u.username);setDisplayName(u.display_name);setEmail(u.email||"");setWhatsappNumber(u.whatsapp_number||"");setWhatsappEnabled(u.whatsapp_notifications_enabled!==false);setPassword("");
     const mapped={};for(const a of (u.assignments||[]))mapped[a.business_id]=a.permission;setAssignments(mapped);setError("");
@@ -374,8 +374,8 @@ function UserManager({users,businesses,onClose,onSave,onDelete,onToggle}) {
         <label className="field"><span>WhatsApp number</span><input type="tel" inputMode="tel" value={whatsappNumber} onChange={e=>setWhatsappNumber(e.target.value)} placeholder="+8801XXXXXXXXX"/></label>
         <label className="field"><span>{editing?"New password (leave blank to keep current)":"Password (minimum 4 characters)"}</span><input type="password" value={password} onChange={e=>setPassword(e.target.value)} minLength={4} required={!editing} autoComplete="new-password"/></label>
       </div>
-      <label className="inline-check"><input type="checkbox" checked={whatsappEnabled} onChange={e=>setWhatsappEnabled(e.target.checked)}/> Allow WhatsApp notifications for this account</label>
-      <p className="form-hint">Use international format with country code, for example +8801XXXXXXXXX.</p>
+      <label className="inline-check"><input type="checkbox" checked={whatsappEnabled} onChange={e=>setWhatsappEnabled(e.target.checked)}/> Member has opted in to WhatsApp notifications</label>
+      <p className="form-hint">Use international format with country code, for example +8801XXXXXXXXX. Only enable notifications when the member has agreed to receive them.</p>
       <div className="assignment-heading">Business access</div>
       <div className="assignment-list">{assignableBusinesses.map(b=><div className="assignment-row" key={b.id}>
         <label><input type="checkbox" checked={Boolean(assignments[b.id])} onChange={e=>setPermission(b.id,e.target.checked?"read":null)}/><span>{b.name}</span></label>
@@ -390,7 +390,7 @@ function UserManager({users,businesses,onClose,onSave,onDelete,onToggle}) {
 
 function AccountSettings({account,onClose,onSave}) {
   const [number,setNumber]=useState(account?.whatsapp_number||"");
-  const [enabled,setEnabled]=useState(account?.whatsapp_notifications_enabled!==false);
+  const [enabled,setEnabled]=useState(Boolean(account?.whatsapp_notifications_enabled));
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
   async function submit(e){
@@ -404,7 +404,8 @@ function AccountSettings({account,onClose,onSave}) {
       <div className="profile-account-summary"><span className="profile-account-icon"><UserRound size={19}/></span><div><strong>{account?.display_name||account?.displayName||account?.username||"Account"}</strong><small>@{account?.username||"owner"} · {account?.role==="owner"?"Workspace owner":"Team member"}</small></div></div>
       <label className="field"><span>WhatsApp contact number</span><input type="tel" inputMode="tel" autoComplete="tel" value={number} onChange={e=>setNumber(e.target.value)} placeholder="+8801XXXXXXXXX"/></label>
       <p className="form-hint">Include your country code. Example: +8801XXXXXXXXX.</p>
-      <label className="inline-check"><input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)}/> Receive WhatsApp notifications</label>
+      <div className={account?.whatsapp_configured?"whatsapp-connection-state connected":"whatsapp-connection-state pending"}>{account?.whatsapp_configured?<><CheckCircle2 size={16}/><span>WhatsApp API connected. Notifications can be delivered when enabled.</span></>:<><Info size={16}/><span>Your contact and opt-in will be saved now. WhatsApp delivery starts after Meta Cloud API is connected and its message template is approved.</span></>}</div>
+      <label className="inline-check"><input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)}/> I agree to receive TaskXVS WhatsApp notifications on this number</label>
       {error&&<div className="form-error">{error}</div>}
       <div className="modal-actions"><Button variant="ghost" type="button" onClick={onClose} disabled={busy}>Cancel</Button><Button disabled={busy}>{busy?"Saving…":"Save contact"}</Button></div>
     </form>
