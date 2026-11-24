@@ -337,7 +337,7 @@ app.post("/api/admin/users", requireAuth, requireOwner, async (req, res, next) =
     }
     await client.query("COMMIT");
     res.status(201).json(created.rows[0]);
-    recordActivity(req,{event_type:"team_member_created",entity_type:"team_member",entity_id:created.rows[0].id,title:`Created team member ${username}`,details:{username,display_name:displayName,assigned_business_count:assignments.length}});
+    recordActivity(req,{event_type:"team_member_created",entity_type:"team_member",entity_id:created.rows[0].id,title:`Created team member ${username}`,details:{username,display_name:displayName,assigned_business_count:assignments.length,assignments:assignments.map(a=>({business_id:a.business_id,permission:a.permission}))}});
   } catch (e) {
     await client.query("ROLLBACK");
     if (e.code === "23505") return res.status(409).json({ error: "That username is already in use." });
@@ -389,7 +389,7 @@ app.patch("/api/admin/users/:id", requireAuth, requireOwner, async (req, res, ne
     await client.query("COMMIT");
     res.json(result.rows[0]);
     const eventType=typeof req.body.active==="boolean"?(req.body.active?"team_member_enabled":"team_member_disabled"):"team_member_updated";
-    recordActivity(req,{event_type:eventType,entity_type:"team_member",entity_id:req.params.id,title:`Updated team member ${result.rows[0].username}`,details:{display_name:result.rows[0].display_name,active:result.rows[0].active,assignments_changed:Array.isArray(req.body?.assignments)}});
+    recordActivity(req,{event_type:eventType,entity_type:"team_member",entity_id:req.params.id,title:`Updated team member ${result.rows[0].username}`,details:{display_name:result.rows[0].display_name,active:result.rows[0].active,assignments_changed:Array.isArray(req.body?.assignments),assignments:Array.isArray(req.body?.assignments)?req.body.assignments.map(a=>({business_id:a.business_id,permission:a.permission})):undefined}});
   } catch(e) {
     await client.query("ROLLBACK");
     if(e.code==="23503")return res.status(400).json({error:"One of the selected businesses does not exist."});
@@ -573,8 +573,11 @@ app.patch("/api/tasks/:id",requireAuth,async(req,res,next)=>{
       [req.params.id,v.business_id,v.category_id,v.title,v.description,v.notes,v.status,v.priority,v.created_date,v.start_date,v.deadline]
     );
     res.json(result.rows[0]);
-    if(existing.rows[0].title!==result.rows[0].title||existing.rows[0].description!==result.rows[0].description||existing.rows[0].deadline!==result.rows[0].deadline||existing.rows[0].priority!==result.rows[0].priority||existing.rows[0].business_id!==result.rows[0].business_id){
-      recordActivity(req,{event_type:"task_updated",entity_type:"task",entity_id:result.rows[0].id,business_id:result.rows[0].business_id,title:`Updated task ${result.rows[0].title}`,details:{before:{title:existing.rows[0].title,deadline:existing.rows[0].deadline,priority:existing.rows[0].priority},after:{title:result.rows[0].title,deadline:result.rows[0].deadline,priority:result.rows[0].priority}}});
+    if(["title","description","notes","category_id","deadline","priority","created_date","start_date","business_id"].some(key=>String(existing.rows[0][key]??"")!==String(result.rows[0][key]??""))){
+      const keys=["title","description","notes","category_id","deadline","priority","created_date","start_date","business_id"];
+      const before={},after={};
+      for(const key of keys){before[key]=existing.rows[0][key];after[key]=result.rows[0][key];}
+      recordActivity(req,{event_type:"task_updated",entity_type:"task",entity_id:result.rows[0].id,business_id:result.rows[0].business_id,title:`Updated task ${result.rows[0].title}`,details:{before,after}});
     }
     if(existing.rows[0].status!=="in_progress"&&result.rows[0].status==="in_progress"){
       const business=await businessRow(v.business_id);
