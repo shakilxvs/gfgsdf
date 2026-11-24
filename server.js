@@ -343,21 +343,36 @@ app.delete("/api/admin/users/:id", requireAuth, requireOwner, async (req,res,nex
 });
 
 /* Business administration is owner-only. */
-app.post("/api/businesses", requireAuth, requireOwner, async (req, res, next) => {
+app.post("/api/businesses", requireAuth, async (req, res, next) => {
+  const client=await pool.connect();
   try {
     const name=String(req.body?.name||"").trim();
-    const email=String(req.body?.notification_email||"").trim();
-    const emailNotifications=Boolean(req.body?.email_notifications);
     if(!name||name.length>60)return res.status(400).json({error:"Business name must be between 1 and 60 characters."});
-    if(!validEmailList(email))return res.status(400).json({error:"Enter up to 10 valid notification email addresses separated by commas."});
-    const result=await pool.query(
+    let email=null,emailEnabled=false;
+    if(req.auth.role==="owner"){
+      email=String(req.body?.notification_email||"").trim()||null;
+      emailEnabled=Boolean(req.body?.email_notifications);
+      if(!validEmailList(email))return res.status(400).json({error:"Enter up to 10 valid notification email addresses separated by commas."});
+    }else{
+      const access=await client.query("SELECT 1 FROM business_assignments WHERE user_id=$1 AND permission='write' LIMIT 1",[req.auth.id]);
+      if(!access.rowCount)return res.status(403).json({error:"Read & write access is required to create a business."});
+    }
+    await client.query("BEGIN");
+    const created=await client.query(
       "INSERT INTO businesses (name,notification_email,email_notifications,position) VALUES ($1,$2,$3,COALESCE((SELECT max(position)+1 FROM businesses),1)) RETURNING *",
-      [name,email||null,emailNotifications]
+      [name,email,emailEnabled]
     );
-    res.status(201).json(result.rows[0]);
-  } catch(e){
+    if(req.auth.role==="member"){
+      await client.query("INSERT INTO business_assignments (user_id,business_id,permission) VALUES ($1,$2,'write')",[req.auth.id,created.rows[0].id]);
+    }
+    await client.query("COMMIT");
+    res.status(201).json(created.rows[0]);
+  }catch(e){
+    await client.query("ROLLBACK");
     if(e.code==="23505")return res.status(409).json({error:"A business with that name already exists."});
     next(e);
+  }finally{client.release();}
+});(e);
   }
 });
 app.patch("/api/businesses/:id", requireAuth, requireOwner, async (req,res,next)=>{
