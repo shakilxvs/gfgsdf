@@ -336,18 +336,20 @@ function UserManager({users,businesses,onClose,onSave,onDelete,onToggle}) {
   const [username,setUsername]=useState("");
   const [displayName,setDisplayName]=useState("");
   const [email,setEmail]=useState("");
+  const [whatsappNumber,setWhatsappNumber]=useState("");
+  const [whatsappEnabled,setWhatsappEnabled]=useState(true);
   const [password,setPassword]=useState("");
   const [assignments,setAssignments]=useState({});
   const [error,setError]=useState("");
   const [busy,setBusy]=useState(false);
-  function reset(){setEditing(null);setUsername("");setDisplayName("");setEmail("");setPassword("");setAssignments({});setError("");}
+  function reset(){setEditing(null);setUsername("");setDisplayName("");setEmail("");setWhatsappNumber("");setWhatsappEnabled(true);setPassword("");setAssignments({});setError("");}
   function edit(u){
-    setEditing(u);setUsername(u.username);setDisplayName(u.display_name);setEmail(u.email||"");setPassword("");
+    setEditing(u);setUsername(u.username);setDisplayName(u.display_name);setEmail(u.email||"");setWhatsappNumber(u.whatsapp_number||"");setWhatsappEnabled(u.whatsapp_notifications_enabled!==false);setPassword("");
     const mapped={};for(const a of (u.assignments||[]))mapped[a.business_id]=a.permission;setAssignments(mapped);setError("");
   }
   async function submit(e){
     e.preventDefault();setBusy(true);setError("");
-    const data={username,display_name:displayName,email,password,assignments:Object.entries(assignments).filter(([,p])=>p).map(([business_id,permission])=>({business_id,permission}))};
+    const data={username,display_name:displayName,email,whatsapp_number:whatsappNumber,whatsapp_notifications_enabled:whatsappEnabled,password,assignments:Object.entries(assignments).filter(([,p])=>p).map(([business_id,permission])=>({business_id,permission}))};
     if(editing)delete data.username;
     if(!password)delete data.password;
     try{await onSave(editing?.id||null,data);reset();}catch(err){setError(err.message);}finally{setBusy(false);}
@@ -357,7 +359,7 @@ function UserManager({users,businesses,onClose,onSave,onDelete,onToggle}) {
   return <Modal title="Team access" subtitle="Create accounts and choose which businesses each person can access." onClose={onClose} wide>
     <div className="users-list">{users.map(u=><div className="user-manager-row" key={u.id}>
       <span className="user-avatar"><UserRound size={16}/></span>
-      <span className="user-manager-details"><strong>{u.display_name||u.username}</strong><small>@{u.username} · {(u.assignments||[]).length} businesses</small></span>
+      <span className="user-manager-details"><strong>{u.display_name||u.username}</strong><small>@{u.username} · {(u.assignments||[]).length} businesses · {u.whatsapp_number||"No WhatsApp number"}</small></span>
       <span className={`user-active-state ${u.active?"active":"inactive"}`}>{u.active?"Active":"Disabled"}</span>
       <button className="mini-action" onClick={()=>edit(u)}><Pencil size={14}/> Edit</button>
       <button className="mini-action" onClick={()=>onToggle(u)}>{u.active?"Disable":"Enable"}</button>
@@ -369,8 +371,11 @@ function UserManager({users,businesses,onClose,onSave,onDelete,onToggle}) {
         <label className="field"><span>Username</span><input value={username} onChange={e=>setUsername(e.target.value)} disabled={Boolean(editing)} minLength={3} maxLength={40} required/></label>
         <label className="field"><span>Display name</span><input value={displayName} onChange={e=>setDisplayName(e.target.value)} maxLength={80} required/></label>
         <label className="field"><span>Email (optional)</span><input type="email" value={email} onChange={e=>setEmail(e.target.value)}/></label>
+        <label className="field"><span>WhatsApp number</span><input type="tel" inputMode="tel" value={whatsappNumber} onChange={e=>setWhatsappNumber(e.target.value)} placeholder="+8801XXXXXXXXX"/></label>
         <label className="field"><span>{editing?"New password (leave blank to keep current)":"Password (minimum 4 characters)"}</span><input type="password" value={password} onChange={e=>setPassword(e.target.value)} minLength={4} required={!editing} autoComplete="new-password"/></label>
       </div>
+      <label className="inline-check"><input type="checkbox" checked={whatsappEnabled} onChange={e=>setWhatsappEnabled(e.target.checked)}/> Allow WhatsApp notifications for this account</label>
+      <p className="form-hint">Use international format with country code, for example +8801XXXXXXXXX.</p>
       <div className="assignment-heading">Business access</div>
       <div className="assignment-list">{assignableBusinesses.map(b=><div className="assignment-row" key={b.id}>
         <label><input type="checkbox" checked={Boolean(assignments[b.id])} onChange={e=>setPermission(b.id,e.target.checked?"read":null)}/><span>{b.name}</span></label>
@@ -379,6 +384,29 @@ function UserManager({users,businesses,onClose,onSave,onDelete,onToggle}) {
       <p className="form-hint">Read is view-only. Read & write allows task and category changes, plus creating new businesses. A business created by a member stays private to that member and the owner.</p>
       {error&&<div className="form-error">{error}</div>}
       <div className="modal-actions">{editing&&<Button variant="ghost" type="button" onClick={reset}>Cancel edit</Button>}<Button disabled={busy}>{busy?"Saving…":editing?"Save member":"Create member"} <UserPlus size={15}/></Button></div>
+    </form>
+  </Modal>;
+}
+
+function AccountSettings({account,onClose,onSave}) {
+  const [number,setNumber]=useState(account?.whatsapp_number||"");
+  const [enabled,setEnabled]=useState(account?.whatsapp_notifications_enabled!==false);
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState("");
+  async function submit(e){
+    e.preventDefault();setBusy(true);setError("");
+    try{await onSave({whatsapp_number:number,whatsapp_notifications_enabled:enabled});onClose();}
+    catch(err){setError(err.message);}
+    finally{setBusy(false);}
+  }
+  return <Modal title="My account" subtitle="Add your WhatsApp contact for TaskXVS notifications." onClose={onClose}>
+    <form className="profile-settings-form" onSubmit={submit}>
+      <div className="profile-account-summary"><span className="profile-account-icon"><UserRound size={19}/></span><div><strong>{account?.display_name||account?.displayName||account?.username||"Account"}</strong><small>@{account?.username||"owner"} · {account?.role==="owner"?"Workspace owner":"Team member"}</small></div></div>
+      <label className="field"><span>WhatsApp contact number</span><input type="tel" inputMode="tel" autoComplete="tel" value={number} onChange={e=>setNumber(e.target.value)} placeholder="+8801XXXXXXXXX"/></label>
+      <p className="form-hint">Include your country code. Example: +8801XXXXXXXXX.</p>
+      <label className="inline-check"><input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)}/> Receive WhatsApp notifications</label>
+      {error&&<div className="form-error">{error}</div>}
+      <div className="modal-actions"><Button variant="ghost" type="button" onClick={onClose} disabled={busy}>Cancel</Button><Button disabled={busy}>{busy?"Saving…":"Save contact"}</Button></div>
     </form>
   </Modal>;
 }
@@ -450,6 +478,8 @@ function App() {
   const [sessionUser,setSessionUser]=useState(null);
   const [users,setUsers]=useState([]);
   const [emailConfigured,setEmailConfigured]=useState(false);
+  const [accountDetails,setAccountDetails]=useState(null);
+  const [accountOpen,setAccountOpen]=useState(false);
   const [active,setActive]=useState("overview");
   const [search,setSearch]=useState("");
   const [listMode,setListMode]=useState(true);
@@ -520,6 +550,16 @@ function App() {
       setCompletingTask(null);setCompletionNote("");
     } catch(err){notify(err.message);}
     finally{setCompletionBusy(false);}
+  }
+  async function openAccount() {
+    try{const result=await api("/api/account");setAccountDetails({...result,...sessionUser});setAccountOpen(true);}
+    catch(err){notify(err.message);}
+  }
+  async function saveAccount(patch) {
+    const result=await api("/api/account",{method:"PATCH",body:JSON.stringify(patch)});
+    setAccountDetails(current=>({...current,...result}));
+    notify("WhatsApp contact saved");
+    return result;
   }
   async function openActivity() {
     try {
@@ -641,7 +681,7 @@ function App() {
       {canCreateBusiness&&<button className="sidebar-add-business" title="Add business" onClick={()=>setModal("businesses")}><Plus size={15}/><span>Add business</span></button>}
       <div className="sidebar-bottom">
         {isOwner&&<button className="sidebar-link sidebar-admin-link" title="Team access" onClick={()=>setModal("users")}><Users size={17}/><span>Team access</span></button>}
-        <div className="owner-row"><div className="owner-avatar">{(sessionUser?.displayName||"X").slice(0,1).toUpperCase()}</div><div><strong>{sessionUser?.displayName||"User"}</strong><small>{isOwner?"Workspace owner":"Team member"}</small></div></div>
+        <button type="button" className="owner-row owner-row-button" onClick={openAccount} title="My account"><div className="owner-avatar">{(sessionUser?.displayName||"X").slice(0,1).toUpperCase()}</div><div><strong>{sessionUser?.displayName||"User"}</strong><small>{isOwner?"Workspace owner":"Team member"}</small></div></button>
         <button className="sidebar-link logout-link" title="Sign out" onClick={logout}><LogOut size={16}/><span>Sign out</span></button>
       </div>
     </aside>
