@@ -282,16 +282,101 @@ function CategoryManager({business,categories,onClose,onAdd,onEdit,onDelete}) {
 }
 
 function BusinessManager({businesses,onClose,onAdd,onRename,onArchive,onDelete}) {
-  const [name,setName]=useState(""); const [error,setError]=useState("");
-  async function submit(e){e.preventDefault();setError("");try{await onAdd(name);setName("");}catch(err){setError(err.message);}}
-  return <Modal title="Your businesses" subtitle="Keep each workspace tidy and separate." onClose={onClose} wide>
-    <div className="business-manager-list">{businesses.map(b=><div className="business-manager-row" key={b.id}>
-      <div className="business-avatar">{b.name.slice(0,1).toUpperCase()}</div><div className="business-manager-name"><strong>{b.name}</strong><small>{b.archived?"Archived":"Active"}</small></div>
-      <button className="mini-action" onClick={async()=>{const next=prompt("Business name",b.name);if(next?.trim()&&next.trim()!==b.name)try{await onRename(b,next.trim())}catch(e){setError(e.message)}}}><Pencil size={14}/></button>
+  const [name,setName]=useState("");
+  const [email,setEmail]=useState("");
+  const [emailEnabled,setEmailEnabled]=useState(false);
+  const [error,setError]=useState("");
+  const [editing,setEditing]=useState(null);
+  const [draft,setDraft]=useState({name:"",notification_email:"",email_notifications:false});
+  const [deleting,setDeleting]=useState(null);
+  const [confirmation,setConfirmation]=useState("");
+  async function add(e){e.preventDefault();setError("");try{await onAdd(name,email,emailEnabled);setName("");setEmail("");setEmailEnabled(false);}catch(err){setError(err.message);}}
+  function edit(b){setEditing(b.id);setDraft({name:b.name,notification_email:b.notification_email||"",email_notifications:Boolean(b.email_notifications)});setError("");}
+  async function saveEdit(e){e.preventDefault();setError("");try{await onRename(editing,draft);setEditing(null);}catch(err){setError(err.message);}}
+  async function confirmDelete(e){e.preventDefault();if(confirmation.trim()!==deleting.name){setError("Enter the exact business name to confirm.");return;}try{await onDelete(deleting);setDeleting(null);setConfirmation("");setError("");}catch(err){setError(err.message);}}
+  return <Modal title="Businesses" subtitle="Manage business details and task notifications." onClose={onClose} wide>
+    <form className="business-create business-create-rich" onSubmit={add}>
+      <div className="category-form-heading">Add a business</div>
+      <div className="form-grid">
+        <label className="field"><span>Business name</span><input value={name} onChange={e=>setName(e.target.value)} maxLength={60} placeholder="Business name" required/></label>
+        <label className="field"><span>Notification email(s)</span><input value={email} onChange={e=>setEmail(e.target.value)} placeholder="team@example.com"/></label>
+      </div>
+      <label className="inline-check"><input type="checkbox" checked={emailEnabled} onChange={e=>setEmailEnabled(e.target.checked)}/> Email task activity for this business</label>
+      <div className="modal-actions"><Button disabled={!name.trim()}><Plus size={15}/> Add business</Button></div>
+    </form>
+    {error&&<div className="form-error">{error}</div>}
+    <div className="business-manager-list business-manager-list-rich">{businesses.map(b=><div className="business-manager-row business-manager-row-rich" key={b.id}>
+      <div className="business-avatar"><Building2 size={15}/></div>
+      <div className="business-manager-name"><strong>{b.name}</strong><small>{b.archived?"Archived":b.notification_email||"No notification email"}{b.email_notifications?" · email on":""}</small></div>
+      <button className="mini-action" onClick={()=>edit(b)}><Pencil size={14}/> Edit</button>
       <button className="mini-action" onClick={()=>onArchive(b)}>{b.archived?<RotateCcw size={14}/>:<Archive size={14}/>}</button>
-      <button className="mini-action danger-action" onClick={()=>onDelete(b)}><Trash2 size={14}/></button>
+      <button className="mini-action danger-action" onClick={()=>{setDeleting(b);setConfirmation("");setError("");}}><Trash2 size={14}/></button>
+      {editing===b.id&&<form className="business-inline-edit" onSubmit={saveEdit}>
+        <label className="field"><span>Business name</span><input value={draft.name} onChange={e=>setDraft(d=>({...d,name:e.target.value}))} required/></label>
+        <label className="field"><span>Notification email(s)</span><input value={draft.notification_email} onChange={e=>setDraft(d=>({...d,notification_email:e.target.value}))} placeholder="team@example.com"/></label>
+        <label className="inline-check"><input type="checkbox" checked={draft.email_notifications} onChange={e=>setDraft(d=>({...d,email_notifications:e.target.checked}))}/> Send task notifications</label>
+        <div className="modal-actions"><Button size="small" variant="ghost" type="button" onClick={()=>setEditing(null)}>Cancel</Button><Button size="small">Save</Button></div>
+      </form>}
     </div>)}</div>
-    <form className="business-create" onSubmit={submit}><label className="field"><span>Add a business</span><input value={name} onChange={e=>setName(e.target.value)} maxLength={60} placeholder="Business name" required/></label>{error&&<div className="form-error">{error}</div>}<div className="modal-actions"><Button disabled={!name.trim()}>Add business <Plus size={15}/></Button></div></form>
+    {deleting&&<Modal title={`Delete ${deleting.name}?`} subtitle="This permanently removes the business, its categories and tasks." onClose={()=>{setDeleting(null);setConfirmation("");}} wide>
+      <form onSubmit={confirmDelete} className="delete-confirm-form">
+        <p>Type <strong>{deleting.name}</strong> exactly to confirm deletion.</p>
+        <label className="field"><span>Business name confirmation</span><input autoFocus value={confirmation} onChange={e=>setConfirmation(e.target.value)} placeholder={deleting.name}/></label>
+        {error&&<div className="form-error">{error}</div>}
+        <div className="modal-actions"><Button variant="ghost" type="button" onClick={()=>{setDeleting(null);setConfirmation("");}}>Cancel</Button><Button color="danger" variant="danger" disabled={confirmation.trim()!==deleting.name}>Delete business</Button></div>
+      </form>
+    </Modal>}
+  </Modal>;
+}
+
+function UserManager({users,businesses,onClose,onSave,onDelete,onToggle}) {
+  const [editing,setEditing]=useState(null);
+  const [username,setUsername]=useState("");
+  const [displayName,setDisplayName]=useState("");
+  const [email,setEmail]=useState("");
+  const [password,setPassword]=useState("");
+  const [assignments,setAssignments]=useState({});
+  const [error,setError]=useState("");
+  const [busy,setBusy]=useState(false);
+  function reset(){setEditing(null);setUsername("");setDisplayName("");setEmail("");setPassword("");setAssignments({});setError("");}
+  function edit(u){
+    setEditing(u);setUsername(u.username);setDisplayName(u.display_name);setEmail(u.email||"");setPassword("");
+    const mapped={};for(const a of (u.assignments||[]))mapped[a.business_id]=a.permission;setAssignments(mapped);setError("");
+  }
+  async function submit(e){
+    e.preventDefault();setBusy(true);setError("");
+    const data={username,display_name:displayName,email,password,assignments:Object.entries(assignments).filter(([,p])=>p).map(([business_id,permission])=>({business_id,permission}))};
+    if(editing)delete data.username;
+    if(!password)delete data.password;
+    try{await onSave(editing?.id||null,data);reset();}catch(err){setError(err.message);}finally{setBusy(false);}
+  }
+  function setPermission(id,value){setAssignments(a=>{const n={...a};if(value)n[id]=value;else delete n[id];return n;});}
+  return <Modal title="Team access" subtitle="Create accounts and choose which businesses each person can access." onClose={onClose} wide>
+    <div className="users-list">{users.map(u=><div className="user-manager-row" key={u.id}>
+      <span className="user-avatar"><UserRound size={16}/></span>
+      <span className="user-manager-details"><strong>{u.display_name||u.username}</strong><small>@{u.username} · {(u.assignments||[]).length} businesses</small></span>
+      <span className={`user-active-state ${u.active?"active":"inactive"}`}>{u.active?"Active":"Disabled"}</span>
+      <button className="mini-action" onClick={()=>edit(u)}><Pencil size={14}/> Edit</button>
+      <button className="mini-action" onClick={()=>onToggle(u)}>{u.active?"Disable":"Enable"}</button>
+      <button className="mini-action danger-action" onClick={()=>onDelete(u)}><Trash2 size={14}/></button>
+    </div>)}</div>
+    <form className="user-create-form" onSubmit={submit}>
+      <div className="category-form-heading">{editing?"Edit member":"Add a member"}</div>
+      <div className="form-grid">
+        <label className="field"><span>Username</span><input value={username} onChange={e=>setUsername(e.target.value)} disabled={Boolean(editing)} minLength={3} maxLength={40} required/></label>
+        <label className="field"><span>Display name</span><input value={displayName} onChange={e=>setDisplayName(e.target.value)} maxLength={80} required/></label>
+        <label className="field"><span>Email (optional)</span><input type="email" value={email} onChange={e=>setEmail(e.target.value)}/></label>
+        <label className="field"><span>{editing?"New password (leave blank to keep current)":"Password (minimum 12 characters)"}</span><input type="password" value={password} onChange={e=>setPassword(e.target.value)} minLength={editing?0:12} required={!editing} autoComplete="new-password"/></label>
+      </div>
+      <div className="assignment-heading">Business access</div>
+      <div className="assignment-list">{businesses.map(b=><div className="assignment-row" key={b.id}>
+        <label><input type="checkbox" checked={Boolean(assignments[b.id])} onChange={e=>setPermission(b.id,e.target.checked?"read":null)}/><span>{b.name}</span></label>
+        <select value={assignments[b.id]||""} disabled={!assignments[b.id]} onChange={e=>setPermission(b.id,e.target.value)}><option value="read">Read only</option><option value="write">Read & write</option></select>
+      </div>)}</div>
+      <p className="form-hint">Read only means view tasks. Read & write allows task and category changes in assigned businesses.</p>
+      {error&&<div className="form-error">{error}</div>}
+      <div className="modal-actions">{editing&&<Button variant="ghost" type="button" onClick={reset}>Cancel edit</Button>}<Button disabled={busy}>{busy?"Saving…":editing?"Save member":"Create member"} <UserPlus size={15}/></Button></div>
+    </form>
   </Modal>;
 }
 
