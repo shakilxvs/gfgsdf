@@ -423,8 +423,18 @@ function ActivityFeed({items,onClose}) {
       {items.length?items.map(item=>{
         const detail=item.details||{};
         const when=new Date(item.created_at).toLocaleString("en-GB",{timeZone:"Asia/Dhaka",day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
-        const fromTo=detail.from&&detail.to?`${detail.from} → ${detail.to}`:"";
-        return <article className="activity-item" key={item.id}><span className="activity-item-icon"><BellRing size={16}/></span><div className="activity-item-main"><div className="activity-item-heading"><strong>{labels[item.event_type]||item.event_type.replaceAll("_"," ")}</strong><time>{when}</time></div><p>{item.title}</p><small>{item.actor_display_name||item.actor_username}{item.business_name?` · ${item.business_name}`:""}{fromTo?` · ${fromTo}`:""}</small>{detail.note&&<div className="activity-item-note">{detail.note}</div>}</div></article>;
+        const fromTo=detail.from&&detail.to?\`\${detail.from} → \${detail.to}\`:"";
+        const changed=detail.before&&detail.after?Object.keys(detail.after).filter(key=>JSON.stringify(detail.before[key]??null)!==JSON.stringify(detail.after[key]??null)).map(key=>\`\${key.replaceAll("_"," ")}: \${detail.before[key]??"none"} → \${detail.after[key]??"none"}\`):[];
+        const metadata=[
+          detail.deadline?\`Deadline: \${detail.deadline}\`:null,
+          detail.priority?\`Priority: \${detail.priority}\`:null,
+          detail.notification_email?\`Recipients: \${detail.notification_email}\`:null,
+          typeof detail.email_notifications==="boolean"?\`Email notifications: \${detail.email_notifications?"On":"Off"}\`:null,
+          typeof detail.assigned_business_count==="number"?\`\${detail.assigned_business_count} business assignment(s)\`:null,
+          ...(Array.isArray(detail.assignments)?detail.assignments.map(a=>\`\${a.business_id}: \${a.permission}\`):[])
+        ].filter(Boolean);
+        const summary=[...changed,...metadata].join(" · ");
+        return <article className="activity-item" key={item.id}><span className="activity-item-icon"><BellRing size={16}/></span><div className="activity-item-main"><div className="activity-item-heading"><strong>{labels[item.event_type]||item.event_type.replaceAll("_"," ")}</strong><time>{when}</time></div><p>{item.title}</p><small>{item.actor_display_name||item.actor_username}{item.business_name?\` · \${item.business_name}\`:""}{fromTo?\` · \${fromTo}\`:""}</small>{summary&&<div className="activity-item-note">{summary}</div>}{detail.note&&<div className="activity-item-note">{detail.note}</div>}</div></article>;
       }):<div className="activity-empty"><Bell size={20}/><strong>No activity yet</strong><span>Workspace changes will appear here.</span></div>}
     </div>
     <div className="modal-actions"><Button variant="ghost" onClick={onClose}>Close</Button></div>
