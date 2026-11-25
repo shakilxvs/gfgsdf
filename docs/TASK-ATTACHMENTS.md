@@ -72,3 +72,11 @@ Migration: `db/migrations/20261125_task_attachments.sql`
 Table: `public.task_attachments`
 
 It contains the attachment metadata, not file bytes. The `task_id` foreign key cascades on task deletion. Do not add Cloudinary credentials or signed URLs to this table.
+
+
+## Task details preview
+
+The Task details modal renders all attachments without requiring the user to enter Edit task:
+- Image files use the authenticated TaskXVS download endpoint as an inline image preview. The endpoint verifies the current user and task/business access, then redirects to a short-lived signed Cloudinary URL.
+- Non-image documents appear as filename/size cards with a download link.
+- This presentation is also available for completed tasks because task attachment metadata remains in the workspace bootstrap response.

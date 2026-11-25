@@ -815,6 +815,25 @@ function TaskDetails({task,business,category,today,canWrite,onClose,onEdit,onCom
         <div><span>Deadline</span><strong>{formatDate(task.deadline,true)}</strong></div>
         <div><span>Completed</span><strong>{completed}</strong></div>
       </div>
+      {(task.attachments?.length||0)>0&&<section className="task-detail-section task-detail-attachments">
+        <div className="task-detail-attachments-heading"><h3><Paperclip size={15}/> Attachments</h3><span>{task.attachments.length}</span></div>
+        <div className="task-detail-attachment-grid">
+          {task.attachments.map(item=>{
+            const url="/api/tasks/"+task.id+"/attachments/"+item.id+"/download";
+            const isImage=String(item.mime_type||"").startsWith("image/");
+            return isImage
+              ? <a className="task-detail-image-preview" href={url} target="_blank" rel="noopener noreferrer" key={item.id}>
+                  <img src={url} alt={item.file_name} loading="lazy" onError={event=>{event.currentTarget.style.display="none";}}/>
+                  <span><strong>{item.file_name}</strong><small>{formatAttachmentSize(item.size_bytes)} · Open image</small></span>
+                </a>
+              : <a className="task-detail-document" href={url} target="_blank" rel="noopener noreferrer" key={item.id}>
+                  <span className="task-detail-document-icon"><FileText size={20}/></span>
+                  <span><strong>{item.file_name}</strong><small>{formatAttachmentSize(item.size_bytes)} · Download document</small></span>
+                  <ArrowUpRight size={15}/>
+                </a>;
+          })}
+        </div>
+      </section>}
       {task.notes&&<section className="task-detail-section"><h3>Task notes</h3><p>{task.notes}</p></section>}
       {task.completion_note&&<section className="task-detail-section task-detail-completion"><h3><CheckCheck size={15}/> Completion note</h3><p>{task.completion_note}</p></section>}
       <div className="task-detail-actions"><Button variant="ghost" onClick={onClose}>Close</Button>{canWrite&&<><Button variant="secondary" onClick={onEdit}><Pencil size={15}/> Edit task</Button>{task.status!=="done"&&<Button onClick={onComplete}><Check size={15}/> Mark as done</Button>}</>}</div>
