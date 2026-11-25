@@ -957,8 +957,8 @@ function AttachmentPreviewBody({taskId,attachment}) {
       <div className="attachment-sheet-scroll"><table><tbody>{activeRows.map((row,rowIndex)=><tr key={rowIndex}>{row.map((cell,columnIndex)=>rowIndex===0?<th key={columnIndex}>{cell}</th>:<td key={columnIndex}>{cell}</td>)}</tr>)}</tbody></table></div>
       {showLimit&&<p className="attachment-viewer-limit">Preview limited to the first 300 rows and 24 columns. Download the original file to view all data.</p>}
     </div>}
-    {mode==="docx"&&<div className="attachment-viewer-docx"><div ref={documentRef}/></div>}
-    {mode==="pptx"&&<div className="attachment-viewer-pptx"><div ref={slidesRef}/>{showLimit&&<p className="attachment-viewer-limit">Preview limited to the first 60 slides. Download the original presentation to view all slides.</p>}</div>}
+    <div className="attachment-viewer-docx" style={{display:mode==="docx"?"block":"none"}}><div ref={documentRef}/></div>
+    <div className="attachment-viewer-pptx" style={{display:mode==="pptx"?"grid":"none"}}><div ref={slidesRef}/>{showLimit&&<p className="attachment-viewer-limit">Preview limited to the first 60 slides. Download the original presentation to view all slides.</p>}</div>
     {mode==="unsupported"&&<div className="attachment-viewer-state"><FileText size={24}/><strong>Preview is not available for this older Office format</strong><span>Save this file as DOCX or PPTX to preview it inside TaskXVS, or use Download to open the original.</span></div>}
   </div>;
 }
