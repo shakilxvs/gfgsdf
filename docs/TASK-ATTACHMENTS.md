@@ -80,3 +80,27 @@ The Task details modal renders all attachments without requiring the user to ent
 - Image files use the authenticated TaskXVS download endpoint as an inline image preview. The endpoint verifies the current user and task/business access, then redirects to a short-lived signed Cloudinary URL.
 - Non-image documents appear as filename/size cards with a download link.
 - This presentation is also available for completed tasks because task attachment metadata remains in the workspace bootstrap response.
+
+
+## In-portal previews
+
+Task Details now offers an in-app Preview action and a separate Download action.
+
+Preview support:
+- Images: inline image viewer with contain/fit sizing.
+- PDF: embedded browser PDF viewer.
+- CSV and TXT: rendered as text/table previews.
+- XLSX: in-browser workbook preview with worksheet tabs.
+- Legacy XLS (BIFF8): in-browser values preview with worksheet tabs.
+- DOCX: browser-side Word renderer.
+- PPTX: browser-side slide renderer (first 60 slides).
+
+Spreadsheet previews are intentionally capped to the first 300 rows and 24 columns to protect browser memory and keep the modal responsive. The original file remains downloadable. PowerPoint preview is capped to 60 slides.
+
+Older binary Word `.doc` and PowerPoint `.ppt` files are not currently rendered in-browser. The viewer explains this and keeps the original Download action available; save these files as DOCX/PPTX to preview them in TaskXVS.
+
+### Preview security
+
+The `/api/tasks/:id/attachments/:attachmentId/preview` endpoint requires a TaskXVS session and read access to the task's business. It retrieves the authenticated Cloudinary asset server-side and streams the bytes back with the stored MIME type and inline content disposition. Cloudinary signed URLs and credentials are never exposed to the browser. The preview response is private and non-cacheable.
+
+The browser uses local rendering libraries for Office formats. Document contents are not sent to Google Docs, Microsoft Office Online, or another public preview service.
