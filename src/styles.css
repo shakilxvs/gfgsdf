@@ -2064,3 +2064,74 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 @media (max-width:620px) {
   .timezone-picker-popover { width:min(86vw,390px); min-width:0; right:0; }
 }
+
+
+/* Mobile header menu control: retain the icon-button reset and prevent the
+   browser's default button sizing from creating the oversized top-left pill. */
+@media (max-width: 900px) {
+  .topbar {
+    display:flex;
+    flex-direction:row;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    min-width:0;
+  }
+  .mobile-menu-button.icon-button {
+    display:inline-grid;
+    place-items:center;
+    flex:0 0 40px;
+    width:40px;
+    min-width:40px;
+    height:40px;
+    min-height:40px;
+    padding:0;
+    margin:0;
+    border:1px solid #e6dfd5;
+    border-radius:50%;
+    background:#f2eee8;
+    color:#665c52;
+    line-height:1;
+    box-shadow:none;
+    appearance:none;
+    -webkit-appearance:none;
+    touch-action:manipulation;
+  }
+  .mobile-menu-button.icon-button svg {
+    display:block;
+    width:19px;
+    height:19px;
+  }
+  .topbar > .business-tabs {
+    flex:1 1 auto;
+    min-width:0;
+    margin:0;
+    overflow:hidden;
+  }
+  .topbar > .topbar-right {
+    flex:0 0 auto;
+    min-width:0;
+  }
+}
+@media (max-width: 650px) {
+  .topbar {
+    min-height:64px;
+    padding-left:max(10px, env(safe-area-inset-left));
+    padding-right:max(10px, env(safe-area-inset-right));
+    gap:6px;
+  }
+  .mobile-menu-button.icon-button {
+    flex-basis:36px;
+    width:36px;
+    min-width:36px;
+    height:36px;
+    min-height:36px;
+  }
+  .topbar > .business-tabs {
+    min-height:44px;
+    margin-right:0;
+  }
+  .topbar > .business-tabs .business-tabs-scroll {
+    min-width:0;
+  }
+}
