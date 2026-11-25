@@ -1279,6 +1279,103 @@ app.patch("/api/tasks/:id",requireAuth,async(req,res,next)=>{
     next(e);
   }
 });
+app.post("/api/tasks/:id/attachments",requireAuth,express.raw({type:"application/octet-stream",limit:TASK_ATTACHMENT_MAX_BYTES}),async(req,res,next)=>{
+  let uploaded=null;
+  try{
+    const taskResult=await pool.query("SELECT id,business_id FROM tasks WHERE id=$1",[req.params.id]);
+    if(!taskResult.rowCount)return res.status(404).json({error:"Task not found."});
+    const task=taskResult.rows[0];
+    if(!await requireBusinessAccess(req,res,task.business_id,true))return;
+    const count=await pool.query("SELECT count(*)::int AS count FROM task_attachments WHERE task_id=$1",[task.id]);
+    if(count.rows[0].count>=TASK_ATTACHMENT_MAX_COUNT)return res.status(400).json({error:"A task can have up to 10 attachments."});
+    const file=validateTaskAttachment(req.body,req.get("x-file-name"),req.get("x-file-type"));
+    const client=getCloudinaryClient();
+    const suffix=crypto.randomUUID();
+    const publicId=file.resourceType==="raw"?"taskxvs-"+suffix+file.extension:"taskxvs-"+suffix;
+    uploaded=await new Promise((resolve,reject)=>{
+      const stream=client.uploader.upload_stream({
+        resource_type:file.resourceType,
+        type:"authenticated",
+        asset_folder:"TaskXVS/Task Attachments",
+        public_id:publicId,
+        display_name:file.fileName,
+        filename_override:file.fileName,
+        overwrite:false,
+        unique_filename:false,
+        tags:["taskxvs","task-attachments"],
+        context:"task_id="+task.id+"|business_id="+task.business_id
+      },(error,result)=>error?reject(error):resolve(result));
+      Readable.from(req.body).pipe(stream);
+    });
+    const saved=await pool.query(
+      "INSERT INTO task_attachments (task_id,cloudinary_asset_id,cloudinary_public_id,resource_type,delivery_type,format,version,file_name,mime_type,size_bytes,uploaded_by_username) VALUES ($1,$2,$3,$4,'authenticated',$5,$6,$7,$8,$9,$10) RETURNING id,task_id,file_name,mime_type,size_bytes,resource_type,created_at",
+      [task.id,uploaded.asset_id,uploaded.public_id,uploaded.resource_type,uploaded.format||file.extension.slice(1),uploaded.version,file.fileName,file.mimeType,uploaded.bytes,req.auth.username||req.auth.displayName||"unknown"]
+    );
+    recordActivity(req,{
+      event_type:"task_attachment_added",entity_type:"task",entity_id:task.id,business_id:task.business_id,
+      title:"Attached "+file.fileName+" to a task",details:{file_name:file.fileName,mime_type:file.mimeType,size_bytes:uploaded.bytes}
+    });
+    return res.status(201).json(saved.rows[0]);
+  }catch(error){
+    if(uploaded&&uploaded.public_id){
+      await cloudinary.uploader.destroy(uploaded.public_id,{
+        resource_type:uploaded.resource_type||"raw",type:"authenticated",invalidate:true
+      }).catch(cleanupError=>console.error("Orphan Cloudinary asset cleanup failed:",cleanupError.message));
+    }
+    if(error.status)return res.status(error.status).json({error:error.message});
+    if(error.http_code===400||error.http_code===413)return res.status(400).json({error:"Cloudinary rejected this file. Check the file type and size, then try again."});
+    next(error);
+  }
+});
+
+app.get("/api/tasks/:id/attachments/:attachmentId/download",requireAuth,async(req,res,next)=>{
+  try{
+    const result=await pool.query(
+      "SELECT a.*,t.business_id FROM task_attachments a JOIN tasks t ON t.id=a.task_id WHERE a.task_id=$1 AND a.id=$2",
+      [req.params.id,req.params.attachmentId]
+    );
+    if(!result.rowCount)return res.status(404).json({error:"Attachment not found."});
+    if(!await requireBusinessAccess(req,res,result.rows[0].business_id,false))return;
+    const attachment=result.rows[0];
+    const client=getCloudinaryClient();
+    const url=client.utils.private_download_url(
+      attachment.cloudinary_public_id,
+      attachment.format||path.extname(attachment.file_name).slice(1),
+      {
+        resource_type:attachment.resource_type,
+        type:attachment.delivery_type||"authenticated",
+        expires_at:Math.floor(Date.now()/1000)+10*60,
+        attachment:attachment.resource_type==="raw",
+        target_filename:attachment.file_name
+      }
+    );
+    res.set("Cache-Control","no-store").redirect(302,url);
+  }catch(error){next(error);}
+});
+
+app.delete("/api/tasks/:id/attachments/:attachmentId",requireAuth,async(req,res,next)=>{
+  try{
+    const result=await pool.query(
+      "SELECT a.*,t.business_id FROM task_attachments a JOIN tasks t ON t.id=a.task_id WHERE a.task_id=$1 AND a.id=$2",
+      [req.params.id,req.params.attachmentId]
+    );
+    if(!result.rowCount)return res.status(404).json({error:"Attachment not found."});
+    const attachment=result.rows[0];
+    if(!await requireBusinessAccess(req,res,attachment.business_id,true))return;
+    await deleteTaskCloudinaryAsset(attachment);
+    await pool.query("DELETE FROM task_attachments WHERE id=$1",[attachment.id]);
+    recordActivity(req,{
+      event_type:"task_attachment_deleted",entity_type:"task",entity_id:attachment.task_id,business_id:attachment.business_id,
+      title:"Removed attachment "+attachment.file_name,details:{file_name:attachment.file_name}
+    });
+    res.json({ok:true});
+  }catch(error){
+    if(error.status)return res.status(error.status).json({error:error.message});
+    if(error.message==="Cloudinary could not confirm deletion of an attachment.")return res.status(502).json({error:error.message});
+    next(error);
+  }
+});
+
 app.patch("/api/tasks/:id/status",requireAuth,async(req,res,next)=>{
   try{
     const current=await pool.query("SELECT * FROM tasks WHERE id=$1",[req.params.id]);
@@ -1309,9 +1406,17 @@ app.delete("/api/tasks/:id",requireAuth,async(req,res,next)=>{
     const current=await pool.query("SELECT * FROM tasks WHERE id=$1",[req.params.id]);
     if(!current.rowCount)return res.status(404).json({error:"Task not found."});
     if(!await requireBusinessAccess(req,res,current.rows[0].business_id,true))return;
+    const attachments=await pool.query("SELECT * FROM task_attachments WHERE task_id=$1 ORDER BY created_at",[req.params.id]);
+    try{
+      for(const attachment of attachments.rows)await deleteTaskCloudinaryAsset(attachment);
+    }catch(cleanupError){
+      return res.status(502).json({
+        error:"Task was not deleted because Cloudinary could not confirm removal of every attachment. Please retry; already-removed files are safe to retry."
+      });
+    }
     await pool.query("DELETE FROM tasks WHERE id=$1",[req.params.id]);
-    res.json({ok:true});
-    recordActivity(req,{event_type:"task_deleted",entity_type:"task",entity_id:current.rows[0].id,business_id:current.rows[0].business_id,title:`Deleted task ${current.rows[0].title}`,details:{status:current.rows[0].status,deadline:current.rows[0].deadline}});
+    res.json({ok:true,deleted_attachments:attachments.rowCount});
+    recordActivity(req,{event_type:"task_deleted",entity_type:"task",entity_id:current.rows[0].id,business_id:current.rows[0].business_id,title:"Deleted task "+current.rows[0].title,details:{status:current.rows[0].status,deadline:current.rows[0].deadline,attachments_deleted:attachments.rowCount}});
     sendBusinessWhatsAppNotification(current.rows[0].business_id,"Task deleted",current.rows[0]);
   }catch(e){next(e);}
 });
@@ -1329,7 +1434,7 @@ app.post("/api/internal/notifications/deadlines",async(req,res,next)=>{
   }catch(error){next(error);}
 });
 app.get("/api/health",async(_req,res)=>{
-  try{await pool.query("SELECT 1");res.json({ok:true,service:"taskxvs",emailReady:Boolean(RESEND_API_KEY&&RESEND_FROM)});}
+  try{await pool.query("SELECT 1");res.json({ok:true,service:"taskxvs",emailReady:Boolean(RESEND_API_KEY&&RESEND_FROM),cloudinaryReady:cloudinaryIsConfigured()});}
   catch{res.status(503).json({ok:false});}
 });
 app.use(express.static(path.join(__dirname,"dist"),{index:false,maxAge:"1h"}));
