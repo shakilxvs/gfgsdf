@@ -650,7 +650,9 @@ async function sendBusinessWhatsAppNotification(businessId,event,task) {
     const recipients=[];
     const ownerResult=await pool.query("SELECT setting_value FROM workspace_settings WHERE setting_key='owner_whatsapp' LIMIT 1");
     const owner=ownerResult.rows[0]?.setting_value||{};
-    if(owner.whatsapp_number&&owner.whatsapp_notifications_enabled===true)recipients.push({userId:null,number:owner.whatsapp_number});
+    if(owner.whatsapp_number&&owner.whatsapp_notifications_enabled===true){
+      recipients.push({userId:null,number:owner.whatsapp_number});
+    }
     const members=await pool.query(
       "SELECT DISTINCT u.id,u.whatsapp_number FROM users u JOIN business_assignments a ON a.user_id=u.id WHERE a.business_id=$1 AND u.active=true AND u.whatsapp_notifications_enabled=true AND u.whatsapp_number IS NOT NULL AND u.whatsapp_number<>''",
       [businessId]
@@ -659,30 +661,59 @@ async function sendBusinessWhatsAppNotification(businessId,event,task) {
     const unique=new Map();
     for(const recipient of recipients){
       const normalized=String(recipient.number||"").replace(/\D/g,"");
-      if(normalized&&!unique.has(normalized))unique.set(normalized,{...recipient,number:"+"+normalized});
+      if(normalized&&!unique.has(normalized)){
+        unique.set(normalized,{...recipient,number:"+"+normalized});
+      }
     }
-    const labels={"Task added":"Task added","Task updated":"Task updated","Task delayed":"Task delayed","Task done":"Task completed","In progress":"Task in progress","To do":"Task moved to To do","Task deleted":"Task deleted"};
-    const eventLabel=labels[event]||event;
-    const deadline=task?.deadline?String(task.deadline):"No deadline set";
-    const status=task?.status==="done"?"Done":task?.status==="in_progress"?"In progress":event==="Task delayed"?"Delayed":"To do";
-    const priority=String(task?.priority||"Normal");
-    const title=String(task?.title||"Workspace update");
+
+    const eventLabels={
+      "Task added":{emoji:"🆕",label:"New task added"},
+      "Task updated":{emoji:"✏️",label:"Task updated"},
+      "Task delayed":{emoji:"⏰",label:"Task delayed"},
+      "Task done":{emoji:"✅",label:"Task completed"},
+      "In progress":{emoji:"🚧",label:"Task in progress"},
+      "To do":{emoji:"📋",label:"Task moved to To do"},
+      "Task deleted":{emoji:"🗑️",label:"Task deleted"}
+    };
+    const eventInfo=eventLabels[event]||{emoji:"🔔",label:String(event||"Workspace update")};
+    const statusInfo=event==="Task delayed"
+      ? {emoji:"⚠️",label:"Delayed"}
+      : task?.status==="done"
+        ? {emoji:"✅",label:"Done"}
+        : task?.status==="in_progress"
+          ? {emoji:"🚧",label:"In progress"}
+          : {emoji:"📝",label:"To do"};
+    const priorities={
+      urgent:{emoji:"🔴",label:"Urgent"},
+      high:{emoji:"🟠",label:"High"},
+      normal:{emoji:"🟡",label:"Normal"},
+      low:{emoji:"🟢",label:"Low"}
+    };
+    const priorityKey=String(task?.priority||"normal").toLowerCase();
+    const priority=priorities[priorityKey]||{emoji:"⚪",label:String(task?.priority||"Normal")};
+    const title=String(task?.title||"Workspace update").trim();
+    const description=String(task?.description||"").trim().slice(0,700);
+    const deadline=task?.deadline
+      ? new Date(String(task.deadline).slice(0,10)+"T00:00:00Z").toLocaleDateString("en-GB",{
+          day:"2-digit",month:"short",year:"numeric",timeZone:"UTC"
+        })
+      : "No deadline set";
     const taskUrl="https://task.shakilxvs.com";
     const message=[
-      "TASKXVS  |  "+business.name,
+      "🏢 *"+String(business.name).trim()+"*",
       "",
-      eventLabel,
-      title,
-      task?.description?String(task.description).slice(0,500):"",
+      eventInfo.emoji+" *"+eventInfo.label+"*",
       "",
-      "Status: "+status,
-      "Priority: "+priority,
-      "Deadline: "+deadline,
+      "📝 *Task:* "+title,
+      description?"📄 *Description:*\n"+description:"",
       "",
-      taskUrl,
+      statusInfo.emoji+" *Status:* "+statusInfo.label,
+      priority.emoji+" *Priority:* "+priority.label,
+      "📅 *Deadline:* "+deadline,
       "",
-      "You receive this because you opted in to TaskXVS notifications for this workspace."
+      "🔗 "+taskUrl
     ].filter(Boolean).join("\n");
+
     for(const recipient of unique.values()){
       let logId=null;
       try{
@@ -696,11 +727,18 @@ async function sendBusinessWhatsAppNotification(businessId,event,task) {
           [logId,recipient.number,message]
         );
       }catch(error){
-        if(logId)await pool.query("UPDATE whatsapp_notification_logs SET status='failed',error_message=$2 WHERE id=$1",[logId,String(error.message).slice(0,1000)]).catch(()=>{});
+        if(logId){
+          await pool.query(
+            "UPDATE whatsapp_notification_logs SET status='failed',error_message=$2 WHERE id=$1",
+            [logId,String(error.message).slice(0,1000)]
+          ).catch(()=>{});
+        }
         console.error("WhatsApp notification queue failed:",error.message);
       }
     }
-  }catch(error){console.error("WhatsApp recipient lookup failed:",error.message);}
+  }catch(error){
+    console.error("WhatsApp recipient lookup failed:",error.message);
+  }
 }
 async function businessRow(businessId) {
   const result = await pool.query("SELECT * FROM businesses WHERE id=$1", [businessId]);
@@ -820,7 +858,13 @@ app.post("/api/admin/whatsapp/test",requireAuth,requireOwner,async(req,res,next)
     if(!owner.whatsapp_number||owner.whatsapp_notifications_enabled!==true){
       return res.status(400).json({error:"Save your WhatsApp number and enable notification opt-in under My account first."});
     }
-    const message="TASKXVS test message\n\nYour cloud WhatsApp connection is ready.\n\nhttps://task.shakilxvs.com";
+    const message=[
+      "🟢 *TASKXVS connection test*",
+      "",
+      "Your WhatsApp sender is connected and ready to send task notifications.",
+      "",
+      "🔗 https://task.shakilxvs.com"
+    ].join("\n");
     const log=await pool.query(
       "INSERT INTO whatsapp_notification_logs (event_type,recipient_number,status) VALUES ('connection_test',$1,'queued') RETURNING id",
       [owner.whatsapp_number]
