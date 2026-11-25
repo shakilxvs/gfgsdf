@@ -16,7 +16,11 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "lucide-react": "^0.468.0",
-    "cloudinary": "^2.11.0"
+    "cloudinary": "^2.11.0",
+    "docx-preview": "^0.4.1",
+    "exceljs": "^4.4.0",
+    "pptx-browser": "^4.1.5",
+    "xls-reader": "^0.7.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
