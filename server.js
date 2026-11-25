@@ -3,6 +3,8 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import pg from "pg";
 import crypto from "node:crypto";
+import { Readable } from "node:stream";
+import { v2 as cloudinary } from "cloudinary";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,6 +50,66 @@ function safeEqual(a, b) {
   const left = Buffer.from(String(a));
   const right = Buffer.from(String(b));
   return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+function getCloudinaryClient() {
+  const config=cloudinary.config();
+  if(!config.cloud_name||!config.api_key||!config.api_secret) {
+    throw Object.assign(new Error("Cloudinary is not configured on the TaskXVS server. Add CLOUDINARY_URL in Render environment variables."),{status:503});
+  }
+  cloudinary.config({...config,secure:true});
+  return cloudinary;
+}
+function cloudinaryIsConfigured() {
+  const config=cloudinary.config();
+  return Boolean(config.cloud_name&&config.api_key&&config.api_secret);
+}
+const TASK_ATTACHMENT_MAX_BYTES=10*1024*1024;
+const TASK_ATTACHMENT_MAX_COUNT=10;
+const TASK_ATTACHMENT_TYPES={
+  ".jpg":{resource_type:"image",mime:["image/jpeg"],check:b=>b.length>=3&&b[0]===0xff&&b[1]===0xd8&&b[2]===0xff},
+  ".jpeg":{resource_type:"image",mime:["image/jpeg"],check:b=>b.length>=3&&b[0]===0xff&&b[1]===0xd8&&b[2]===0xff},
+  ".png":{resource_type:"image",mime:["image/png"],check:b=>b.length>=8&&b.subarray(0,8).equals(Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]))},
+  ".gif":{resource_type:"image",mime:["image/gif"],check:b=>b.length>=6&&["GIF87a","GIF89a"].includes(b.subarray(0,6).toString("ascii"))},
+  ".webp":{resource_type:"image",mime:["image/webp"],check:b=>b.length>=12&&b.subarray(0,4).toString("ascii")==="RIFF"&&b.subarray(8,12).toString("ascii")==="WEBP"},
+  ".pdf":{resource_type:"raw",mime:["application/pdf","application/octet-stream"],check:b=>b.subarray(0,5).toString("ascii")==="%PDF-"},
+  ".docx":{resource_type:"raw",mime:["application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/zip","application/octet-stream"],check:b=>b.length>=4&&b[0]===0x50&&b[1]===0x4b&&b[2]===0x03&&b[3]===0x04},
+  ".xlsx":{resource_type:"raw",mime:["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/zip","application/octet-stream"],check:b=>b.length>=4&&b[0]===0x50&&b[1]===0x4b&&b[2]===0x03&&b[3]===0x04},
+  ".pptx":{resource_type:"raw",mime:["application/vnd.openxmlformats-officedocument.presentationml.presentation","application/zip","application/octet-stream"],check:b=>b.length>=4&&b[0]===0x50&&b[1]===0x4b&&b[2]===0x03&&b[3]===0x04},
+  ".doc":{resource_type:"raw",mime:["application/msword","application/octet-stream"],check:b=>b.length>=8&&b.subarray(0,8).equals(Buffer.from([0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1]))},
+  ".xls":{resource_type:"raw",mime:["application/vnd.ms-excel","application/octet-stream"],check:b=>b.length>=8&&b.subarray(0,8).equals(Buffer.from([0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1]))},
+  ".ppt":{resource_type:"raw",mime:["application/vnd.ms-powerpoint","application/octet-stream"],check:b=>b.length>=8&&b.subarray(0,8).equals(Buffer.from([0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1]))},
+  ".csv":{resource_type:"raw",mime:["text/csv","application/csv","application/vnd.ms-excel","text/plain","application/octet-stream"],check:b=>b.length>0&&!b.subarray(0,Math.min(b.length,4096)).includes(0)},
+  ".txt":{resource_type:"raw",mime:["text/plain","application/octet-stream"],check:b=>b.length>0&&!b.subarray(0,Math.min(b.length,4096)).includes(0)}
+};
+function validateTaskAttachment(buffer,rawName,rawMime) {
+  if(!Buffer.isBuffer(buffer)||!buffer.length)throw Object.assign(new Error("Choose a non-empty file."),{status:400});
+  if(buffer.length>TASK_ATTACHMENT_MAX_BYTES)throw Object.assign(new Error("Each attachment must be 10 MB or smaller."),{status:413});
+  let decodedName=String(rawName||"").trim();
+  try{decodedName=decodeURIComponent(decodedName);}catch{}
+  const baseName=path.basename(decodedName).replace(/[\0\r\n]/g,"").trim().slice(0,180);
+  if(!baseName||baseName==="."||baseName==="..")throw Object.assign(new Error("The attachment filename is invalid."),{status:400});
+  const extension=path.extname(baseName).toLowerCase();
+  const rule=TASK_ATTACHMENT_TYPES[extension];
+  if(!rule)throw Object.assign(new Error("Unsupported file type. Upload images, PDF, Excel, Word, PowerPoint, CSV or TXT files only. Video and audio are not allowed."),{status:415});
+  const mime=String(rawMime||"application/octet-stream").split(";")[0].trim().toLowerCase();
+  if(!rule.mime.includes(mime)||!rule.check(buffer))throw Object.assign(new Error("The file content does not match its filename or supported format."),{status:415});
+  return {
+    fileName:baseName,
+    extension,
+    mimeType:rule.resource_type==="image"?mime:(mime==="application/octet-stream"?rule.mime[0]:mime),
+    resourceType:rule.resource_type
+  };
+}
+async function deleteTaskCloudinaryAsset(attachment) {
+  const client=getCloudinaryClient();
+  const result=await client.uploader.destroy(attachment.cloudinary_public_id,{
+    resource_type:attachment.resource_type,
+    type:attachment.delivery_type||"authenticated",
+    invalidate:true
+  });
+  if(!["ok","not found"].includes(String(result?.result||"").toLowerCase())) {
+    throw new Error("Cloudinary could not confirm deletion of an attachment.");
+  }
 }
 function derivePassword(password, saltHex) {
   return crypto.scryptSync(String(password), Buffer.from(saltHex, "hex"), 64).toString("hex");
