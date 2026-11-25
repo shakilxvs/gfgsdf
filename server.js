@@ -705,14 +705,14 @@ async function sendBusinessWhatsAppNotification(businessId,event,task) {
       eventInfo.emoji+" *"+eventInfo.label+"*",
       "",
       "📝 *Task:* "+title,
-      description?"📄 *Description:*\n"+description:"",
+      description?"📄 *Description:*\n"+description:null,
       "",
       statusInfo.emoji+" *Status:* "+statusInfo.label,
       priority.emoji+" *Priority:* "+priority.label,
       "📅 *Deadline:* "+deadline,
       "",
       "🔗 "+taskUrl
-    ].filter(Boolean).join("\n");
+    ].filter(line=>line!==null&&line!==undefined).join("\n");
 
     for(const recipient of unique.values()){
       let logId=null;
