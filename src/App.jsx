@@ -153,12 +153,27 @@ function IconButton({label, children, className="", ...props}) {
 function EmptyState({title, description, action}) {
   return <div className="empty-state"><div className="empty-icon"><Layers3 size={19}/></div><h3>{title}</h3><p>{description}</p>{action}</div>;
 }
+const MODAL_STACK = [];
 function Modal({title, subtitle, children, onClose, wide=false}) {
+  const modalId=useRef({});
+  const onCloseRef=useRef(onClose);
+  onCloseRef.current=onClose;
   useEffect(() => {
-    const onKey = e => { if (e.key === "Escape") onClose(); };
+    const id=modalId.current;
+    MODAL_STACK.push(id);
+    const onKey = e => {
+      if(e.key==="Escape"&&MODAL_STACK[MODAL_STACK.length-1]===id){
+        e.preventDefault();
+        onCloseRef.current();
+      }
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      const index=MODAL_STACK.lastIndexOf(id);
+      if(index>=0)MODAL_STACK.splice(index,1);
+    };
+  }, []);
   return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose();}}>
     <section className={`modal ${wide?"modal-wide":""}`} role="dialog" aria-modal="true" aria-label={title}>
       <header className="modal-header"><div><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}</div><IconButton label="Close" onClick={onClose}><X size={18}/></IconButton></header>
@@ -172,7 +187,7 @@ function ConfirmDialog({config,onCancel,onConfirm}) {
   return <Modal title={config.heading||"Please confirm"} subtitle={config.subtitle||"Review this action before continuing."} onClose={onCancel}>
     <div className={`confirm-dialog-body ${destructive?"confirm-dialog-danger":"confirm-dialog-neutral"}`}>
       <div className="confirm-dialog-icon">
-        {destructive?<Trash2 size={21}/>:<Plug size={21}/>}
+        {destructive?<Trash2 size={21}/>:<CircleAlert size={21}/>}
       </div>
       <div className="confirm-dialog-copy">
         <h3>{config.title}</h3>
