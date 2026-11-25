@@ -11,7 +11,7 @@ import {
   NotebookPen, Instagram, ChartNoAxesCombined, ChartLine, ListChecks, PackageSearch,
   Truck, Boxes, Warehouse, ShoppingBasket, Headset, Microscope, Shapes, BadgePercent,
   Settings2, ShieldCheck, Users, UserPlus, Building2, CalendarClock, CircleUserRound,
-  Send, MessageCircle, UserRound, LockKeyhole, MailCheck, BellRing
+  Send, MessageCircle, UserRound, LockKeyhole, MailCheck, BellRing, Paperclip
 } from "lucide-react";
 
 const ICONS = {
@@ -214,7 +214,7 @@ function TaskCard({task, category, business, today, onEdit, onDelete, onStatus, 
       {task.deadline && <DeadlineView value={task.deadline} today={today}/>}
     </div>
     {task.status==="done"&&task.completion_note&&<p className="task-completion-note"><strong>Completion note</strong> {task.completion_note}</p>}
-    <div className="task-card-foot"><span><CalendarDays size={13}/>Created {formatDate(task.created_date)}</span>{task.deadline && <span>Due {formatDate(task.deadline,true)}</span>}</div>
+    <div className="task-card-foot"><span><CalendarDays size={13}/>Created {formatDate(task.created_date)}</span>{task.deadline && <span>Due {formatDate(task.deadline,true)}</span>}{(task.attachments?.length||0)>0&&<span className="task-attachment-count"><Paperclip size={13}/>{task.attachments.length} {task.attachments.length===1?"attachment":"attachments"}</span>}</div>
   </article>;
 }
 
@@ -238,6 +238,7 @@ function TaskListRow({task,category,business,today,onEdit,onDelete,onStatus,onVi
     <div className="task-row-main">
       <div className="task-row-title-line"><h3>{task.title}</h3>{business&&<span className="task-row-business">{business.name}</span>}</div>
       {task.description&&<p className="task-row-description">{task.description}</p>}
+      {(task.attachments?.length||0)>0&&<span className="task-row-attachment-count"><Paperclip size={12}/>{task.attachments.length} {task.attachments.length===1?"attachment":"attachments"}</span>}
       {task.status==="done"&&task.completion_note&&<p className="task-row-completion-note"><strong>Completion note:</strong> {task.completion_note}</p>}
     </div>
     <div className="task-row-deadline"><span className="deadline-label">DEADLINE</span><DeadlineView value={task.deadline} today={today}/></div>
@@ -252,7 +253,10 @@ function TaskListRow({task,category,business,today,onEdit,onDelete,onStatus,onVi
   </article>;
 }
 
-function TaskForm({task,businesses,categories,defaultBusiness,onClose,onSave}) {
+const TASK_ATTACHMENT_ACCEPT=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt";
+const TASK_ATTACHMENT_EXTENSIONS=new Set(TASK_ATTACHMENT_ACCEPT.split(","));
+function formatAttachmentSize(bytes) { const value=Number(bytes||0); if(value<1024)return value+" B"; if(value<1024*1024)return (value/1024).toFixed(0)+" KB"; return (value/(1024*1024)).toFixed(1)+" MB"; }
+function TaskForm({task,businesses,categories,defaultBusiness,onClose,onSave,onUpdate,onAttachmentUpdate}) {
   const [draft,setDraft]=useState(()=>({
     business_id:task?.business_id||defaultBusiness||businesses[0]?.id||"",
     category_id:task?.category_id||"",
@@ -260,25 +264,70 @@ function TaskForm({task,businesses,categories,defaultBusiness,onClose,onSave}) {
     status:task?.status||"todo", priority:task?.priority||"normal",
     created_date:task?.created_date||todayDhaka(), start_date:task?.start_date||"", deadline:task?.deadline||""
   }));
-  const [saving,setSaving]=useState(false); const [error,setError]=useState("");
+  const [saving,setSaving]=useState(false);
+  const [error,setError]=useState("");
+  const [existingAttachments,setExistingAttachments]=useState(task?.attachments||[]);
+  const [pendingFiles,setPendingFiles]=useState([]);
+  const [savedTaskId,setSavedTaskId]=useState(task?.id||"");
+  const fileInputRef=useRef(null);
   const available=categories.filter(c=>c.business_id===draft.business_id);
-  function set(k,v) {
-    setDraft(d=>{
-      const next={...d,[k]:v};
-      if(k==="business_id" && d.category_id && !categories.some(c=>c.id===d.category_id&&c.business_id===v)) next.category_id="";
-      return next;
-    });
+  function set(k,v) { setDraft(d=>{ const next={...d,[k]:v}; if(k==="business_id"&&d.category_id&&!categories.some(c=>c.id===d.category_id&&c.business_id===v))next.category_id=""; return next; }); }
+  function addPendingFiles(fileList) {
+    const incoming=Array.from(fileList||[]); if(!incoming.length)return;
+    const accepted=[]; const rejected=[];
+    for(const file of incoming){
+      const dot=file.name.lastIndexOf("."); const extension=dot>=0?file.name.slice(dot).toLowerCase():"";
+      if(!TASK_ATTACHMENT_EXTENSIONS.has(extension)||file.type.startsWith("video/")||file.type.startsWith("audio/")){rejected.push(file.name||"Unnamed file");continue;}
+      if(file.size<=0||file.size>10*1024*1024){rejected.push(file.name+" (over 10 MB or empty)");continue;}
+      if(existingAttachments.length+pendingFiles.length+accepted.length>=10){rejected.push(file.name+" (10-file limit)");continue;}
+      const duplicate=[...pendingFiles,...accepted].some(item=>item.name===file.name&&item.size===file.size&&item.lastModified===file.lastModified);
+      if(!duplicate)accepted.push(file);
+    }
+    if(accepted.length)setPendingFiles(current=>[...current,...accepted]);
+    setError(rejected.length?"Some files were skipped: "+rejected.slice(0,3).join(", "):"");
   }
-  async function submit(e) {
-    e.preventDefault(); setSaving(true); setError("");
-    try {
-      await onSave({...draft,category_id:draft.category_id||null,start_date:draft.start_date||null,deadline:draft.deadline||null});
+  function handlePaste(event) {
+    const items=Array.from(event.clipboardData?.items||[]);
+    const images=items.filter(item=>item.kind==="file"&&item.type.startsWith("image/")).map(item=>item.getAsFile()).filter(Boolean);
+    if(!images.length)return;
+    event.preventDefault();
+    const pasted=images.map((file,index)=>new File([file],file.name||("pasted-screenshot-"+Date.now()+"-"+index+".png"),{type:file.type||"image/png"}));
+    addPendingFiles(pasted);
+  }
+  async function uploadOne(taskId,file) {
+    return api("/api/tasks/"+taskId+"/attachments",{method:"POST",headers:{"Content-Type":"application/octet-stream","X-File-Name":encodeURIComponent(file.name),"X-File-Type":file.type||"application/octet-stream"},body:file});
+  }
+  async function removeExistingAttachment(item) {
+    const taskId=task?.id||savedTaskId; if(!taskId)return;
+    if(!confirm("Delete "+item.file_name+" from this task and Cloudinary?"))return;
+    try{ await api("/api/tasks/"+taskId+"/attachments/"+item.id,{method:"DELETE"}); setExistingAttachments(current=>current.filter(file=>file.id!==item.id)); onAttachmentUpdate?.(taskId,item,"remove"); }
+    catch(err){setError(err.message);}
+  }
+  async function submit(event) {
+    event.preventDefault();setSaving(true);setError("");
+    try{
+      const payload={...draft,category_id:draft.category_id||null,start_date:draft.start_date||null,deadline:draft.deadline||null};
+      let saved;
+      if(task)saved=await onSave(payload);
+      else if(!savedTaskId){saved=await onSave(payload);setSavedTaskId(saved.id);}
+      else saved=await onUpdate({id:savedTaskId},payload);
+      const taskId=task?.id||saved?.id||savedTaskId;
+      if(pendingFiles.length){
+        const failed=[];
+        for(const file of pendingFiles){
+          try{const attachment=await uploadOne(taskId,file);setExistingAttachments(current=>[...current,attachment]);onAttachmentUpdate?.(taskId,attachment,"add");}
+          catch(err){failed.push(file);setError(err.message);}
+        }
+        setPendingFiles(failed);
+        if(failed.length){setError(failed.length+" attachment(s) could not be uploaded. Your task is saved; retry the remaining files or remove them.");return;}
+      }
       onClose();
-    } catch(err) { setError(err.message); }
-    finally { setSaving(false); }
+    }catch(err){setError(err.message);}
+    finally{setSaving(false);}
   }
-  return <Modal title={task?"Edit task":"Create a task"} subtitle="Capture the details, then get back to work." onClose={onClose} wide>
-    <form className="task-form" onSubmit={submit}>
+  const targetTaskId=task?.id||savedTaskId;
+  return <Modal title={task?"Edit task":savedTaskId?"Finish task attachments":"Create a task"} subtitle="Capture the details, then get back to work." onClose={onClose} wide>
+    <form className="task-form" onSubmit={submit} onPaste={handlePaste}>
       <label className="field field-full"><span>Task title <i>Required</i></span><input autoFocus maxLength={200} value={draft.title} onChange={e=>set("title",e.target.value)} placeholder="What needs to get done?" required/></label>
       <label className="field field-full"><span>Description</span><textarea rows={3} maxLength={5000} value={draft.description} onChange={e=>set("description",e.target.value)} placeholder="Add a little context or a clear next step…"/></label>
       <div className="form-grid">
@@ -290,12 +339,31 @@ function TaskForm({task,businesses,categories,defaultBusiness,onClose,onSave}) {
         <label className="field field-full"><span>Deadline <i>Optional</i></span><input type="date" value={draft.deadline} min={draft.start_date||undefined} onChange={e=>set("deadline",e.target.value)}/></label>
       </div>
       <label className="field field-full"><span>Notes <i>Private</i></span><textarea rows={2} maxLength={5000} value={draft.notes} onChange={e=>set("notes",e.target.value)} placeholder="Links, references or extra notes…"/></label>
+      <section className="task-attachment-section">
+        <div className="task-attachment-heading"><div><strong>Attachments</strong><small>Images and documents only · 10 MB each · up to 10 files</small></div><span>{existingAttachments.length+pendingFiles.length}/10</span></div>
+        <button type="button" className="task-attachment-dropzone" onClick={()=>fileInputRef.current?.click()} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();addPendingFiles(e.dataTransfer.files);}}>
+          <Paperclip size={19}/><span><strong>Attach files or drop them here</strong><small>Or paste a screenshot with Cmd+V / Ctrl+V</small></span><span className="task-attachment-browse">Browse</span>
+        </button>
+        <input ref={fileInputRef} className="task-attachment-input" type="file" accept={TASK_ATTACHMENT_ACCEPT} multiple onChange={e=>{addPendingFiles(e.target.files);e.target.value="";}}/>
+        {(existingAttachments.length>0||pendingFiles.length>0)&&<div className="task-attachment-list">
+          {existingAttachments.map(item=><div className="task-attachment-item" key={item.id}>
+            <span className="task-attachment-file-icon"><Paperclip size={15}/></span>
+            <span className="task-attachment-file-copy"><strong>{item.file_name}</strong><small>{formatAttachmentSize(item.size_bytes)} · Saved in Cloudinary</small></span>
+            <a className="task-attachment-download" href={"/api/tasks/"+(task?.id||savedTaskId)+"/attachments/"+item.id+"/download"} target="_blank" rel="noopener noreferrer" title="Download attachment"><FileText size={15}/></a>
+            <button type="button" className="task-attachment-remove" onClick={()=>removeExistingAttachment(item)} title="Delete attachment"><Trash2 size={15}/></button>
+          </div>)}
+          {pendingFiles.map((file,index)=><div className="task-attachment-item task-attachment-pending" key={file.name+"-"+file.size+"-"+index}>
+            <span className="task-attachment-file-icon"><Paperclip size={15}/></span>
+            <span className="task-attachment-file-copy"><strong>{file.name}</strong><small>{formatAttachmentSize(file.size)} · Ready to upload</small></span>
+            <button type="button" className="task-attachment-remove" onClick={()=>setPendingFiles(current=>current.filter((_,i)=>i!==index))} title="Remove file"><X size={15}/></button>
+          </div>)}
+        </div>}
+      </section>
       {error && <div className="form-error">{error}</div>}
-      <div className="modal-actions"><Button variant="ghost" type="button" onClick={onClose}>Cancel</Button><Button disabled={saving}>{saving?"Saving…":task?"Save changes":"Add task"}</Button></div>
+      <div className="modal-actions"><Button variant="ghost" type="button" onClick={onClose}>Cancel</Button><Button disabled={saving}>{saving?"Saving…":pendingFiles.length?"Save & upload":task||savedTaskId?"Save changes":"Add task"}</Button></div>
     </form>
   </Modal>;
 }
-
 function CategoryManager({business,categories,onClose,onAdd,onEdit,onDelete}) {
   const [name,setName]=useState(""); const [icon,setIcon]=useState("shopping-bag"); const [color,setColor]=useState(COLORS[0]); const [error,setError]=useState("");
   const [editing,setEditing]=useState(null);
@@ -876,10 +944,11 @@ function App() {
       setAuthenticated(false);setSessionUser(null);setUsers([]);setBusinesses([]);setCategories([]);setTasks([]);setActive("overview");setSearch("");
     }
   }
+  function updateTaskAttachmentState(taskId,attachment,action="add") { setTasks(current=>current.map(task=>{ if(task.id!==taskId)return task; const currentAttachments=task.attachments||[]; const next=action==="remove"?currentAttachments.filter(item=>item.id!==attachment.id):[...currentAttachments.filter(item=>item.id!==attachment.id),attachment]; return {...task,attachments:next}; })); }
   function notify(message){setToast(message);}
-  async function addTask(values){const result=await api("/api/tasks",{method:"POST",body:JSON.stringify(values)});setTasks(t=>[result,...t]);notify("Task added");}
-  async function updateTask(task,values){const result=await api(`/api/tasks/${task.id}`,{method:"PATCH",body:JSON.stringify(values)});setTasks(ts=>ts.map(t=>t.id===task.id?result:t));notify("Task updated");}
-  async function removeTask(task){if(!confirm(`Delete “${task.title}” permanently?`))return;await api(`/api/tasks/${task.id}`,{method:"DELETE"});setTasks(ts=>ts.filter(t=>t.id!==task.id));notify("Task deleted");}
+  async function addTask(values){const result=await api("/api/tasks",{method:"POST",body:JSON.stringify(values)});setTasks(t=>[result,...t]);notify("Task added");return result;}
+  async function updateTask(task,values){const result=await api(`/api/tasks/${task.id}`,{method:"PATCH",body:JSON.stringify(values)});setTasks(ts=>ts.map(t=>t.id===task.id?{...result,attachments:t.attachments||[]} :t));notify("Task updated");return result;}
+  async function removeTask(task){if(!confirm(`Delete “${task.title}” permanently?`))return;try{await api(`/api/tasks/${task.id}`,{method:"DELETE"});setTasks(ts=>ts.filter(t=>t.id!==task.id));notify("Task and attachments deleted");}catch(err){notify(err.message);}}
   async function changeStatus(task,status,note="") {
     const result=await api(`/api/tasks/${task.id}/status`,{method:"PATCH",body:JSON.stringify({status,completion_note:status==="done"?note:"",confirm_status_change:true,confirm_completion:status==="done"})});
     setTasks(ts=>ts.map(t=>t.id===task.id?result:t));
@@ -1166,7 +1235,7 @@ function App() {
         </section> : <EmptyState title="No business selected" description="Add a business to get started." action={<Button onClick={()=>setModal("businesses")}>Add business</Button>}/>}
       </div>
     </main>
-    {modal==="task"&&<TaskForm task={editingTask} businesses={writableBusinesses} categories={categories} defaultBusiness={active==="overview"?writableBusinesses[0]?.id:active} onClose={()=>setModal(null)} onSave={values=>editingTask?updateTask(editingTask,values):addTask(values)}/>}
+    {modal==="task"&&<TaskForm task={editingTask} businesses={writableBusinesses} categories={categories} defaultBusiness={active==="overview"?writableBusinesses[0]?.id:active} onClose={()=>setModal(null)} onSave={values=>editingTask?updateTask(editingTask,values):addTask(values)} onUpdate={updateTask} onAttachmentUpdate={updateTaskAttachmentState}/>}
     {modal==="categories"&&selectedBusiness&&activeCanWrite&&<CategoryManager business={selectedBusiness} categories={categories} onClose={()=>setModal(null)} onAdd={addCategory} onEdit={editCategory} onDelete={deleteCategory}/>}
     {modal==="businesses"&&canCreateBusiness&&<BusinessManager businesses={businesses} emailConfigured={emailConfigured} isOwner={isOwner} currentUserId={sessionUser?.id} onClose={()=>setModal(null)} onAdd={addBusiness} onRename={renameBusiness} onArchive={archiveBusiness} onDelete={deleteBusiness}/>}
     {modal==="users"&&isOwner&&<UserManager users={users} businesses={businesses} onClose={()=>setModal(null)} onSave={saveUser} onDelete={deleteUser} onToggle={toggleUser}/>}

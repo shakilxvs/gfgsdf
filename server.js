@@ -3,6 +3,8 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import pg from "pg";
 import crypto from "node:crypto";
+import { Readable } from "node:stream";
+import { v2 as cloudinary } from "cloudinary";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,6 +50,66 @@ function safeEqual(a, b) {
   const left = Buffer.from(String(a));
   const right = Buffer.from(String(b));
   return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+function getCloudinaryClient() {
+  const config=cloudinary.config();
+  if(!config.cloud_name||!config.api_key||!config.api_secret) {
+    throw Object.assign(new Error("Cloudinary is not configured on the TaskXVS server. Add CLOUDINARY_URL in Render environment variables."),{status:503});
+  }
+  cloudinary.config({...config,secure:true});
+  return cloudinary;
+}
+function cloudinaryIsConfigured() {
+  const config=cloudinary.config();
+  return Boolean(config.cloud_name&&config.api_key&&config.api_secret);
+}
+const TASK_ATTACHMENT_MAX_BYTES=10*1024*1024;
+const TASK_ATTACHMENT_MAX_COUNT=10;
+const TASK_ATTACHMENT_TYPES={
+  ".jpg":{resource_type:"image",mime:["image/jpeg"],check:b=>b.length>=3&&b[0]===0xff&&b[1]===0xd8&&b[2]===0xff},
+  ".jpeg":{resource_type:"image",mime:["image/jpeg"],check:b=>b.length>=3&&b[0]===0xff&&b[1]===0xd8&&b[2]===0xff},
+  ".png":{resource_type:"image",mime:["image/png"],check:b=>b.length>=8&&b.subarray(0,8).equals(Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]))},
+  ".gif":{resource_type:"image",mime:["image/gif"],check:b=>b.length>=6&&["GIF87a","GIF89a"].includes(b.subarray(0,6).toString("ascii"))},
+  ".webp":{resource_type:"image",mime:["image/webp"],check:b=>b.length>=12&&b.subarray(0,4).toString("ascii")==="RIFF"&&b.subarray(8,12).toString("ascii")==="WEBP"},
+  ".pdf":{resource_type:"raw",mime:["application/pdf","application/octet-stream"],check:b=>b.subarray(0,5).toString("ascii")==="%PDF-"},
+  ".docx":{resource_type:"raw",mime:["application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/zip","application/octet-stream"],check:b=>b.length>=4&&b[0]===0x50&&b[1]===0x4b&&b[2]===0x03&&b[3]===0x04},
+  ".xlsx":{resource_type:"raw",mime:["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/zip","application/octet-stream"],check:b=>b.length>=4&&b[0]===0x50&&b[1]===0x4b&&b[2]===0x03&&b[3]===0x04},
+  ".pptx":{resource_type:"raw",mime:["application/vnd.openxmlformats-officedocument.presentationml.presentation","application/zip","application/octet-stream"],check:b=>b.length>=4&&b[0]===0x50&&b[1]===0x4b&&b[2]===0x03&&b[3]===0x04},
+  ".doc":{resource_type:"raw",mime:["application/msword","application/octet-stream"],check:b=>b.length>=8&&b.subarray(0,8).equals(Buffer.from([0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1]))},
+  ".xls":{resource_type:"raw",mime:["application/vnd.ms-excel","application/octet-stream"],check:b=>b.length>=8&&b.subarray(0,8).equals(Buffer.from([0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1]))},
+  ".ppt":{resource_type:"raw",mime:["application/vnd.ms-powerpoint","application/octet-stream"],check:b=>b.length>=8&&b.subarray(0,8).equals(Buffer.from([0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1]))},
+  ".csv":{resource_type:"raw",mime:["text/csv","application/csv","application/vnd.ms-excel","text/plain","application/octet-stream"],check:b=>b.length>0&&!b.subarray(0,Math.min(b.length,4096)).includes(0)},
+  ".txt":{resource_type:"raw",mime:["text/plain","application/octet-stream"],check:b=>b.length>0&&!b.subarray(0,Math.min(b.length,4096)).includes(0)}
+};
+function validateTaskAttachment(buffer,rawName,rawMime) {
+  if(!Buffer.isBuffer(buffer)||!buffer.length)throw Object.assign(new Error("Choose a non-empty file."),{status:400});
+  if(buffer.length>TASK_ATTACHMENT_MAX_BYTES)throw Object.assign(new Error("Each attachment must be 10 MB or smaller."),{status:413});
+  let decodedName=String(rawName||"").trim();
+  try{decodedName=decodeURIComponent(decodedName);}catch{}
+  const baseName=path.basename(decodedName).replace(/[\0\r\n]/g,"").trim().slice(0,180);
+  if(!baseName||baseName==="."||baseName==="..")throw Object.assign(new Error("The attachment filename is invalid."),{status:400});
+  const extension=path.extname(baseName).toLowerCase();
+  const rule=TASK_ATTACHMENT_TYPES[extension];
+  if(!rule)throw Object.assign(new Error("Unsupported file type. Upload images, PDF, Excel, Word, PowerPoint, CSV or TXT files only. Video and audio are not allowed."),{status:415});
+  const mime=String(rawMime||"application/octet-stream").split(";")[0].trim().toLowerCase();
+  if(!rule.mime.includes(mime)||!rule.check(buffer))throw Object.assign(new Error("The file content does not match its filename or supported format."),{status:415});
+  return {
+    fileName:baseName,
+    extension,
+    mimeType:rule.resource_type==="image"?mime:(mime==="application/octet-stream"?rule.mime[0]:mime),
+    resourceType:rule.resource_type
+  };
+}
+async function deleteTaskCloudinaryAsset(attachment) {
+  const client=getCloudinaryClient();
+  const result=await client.uploader.destroy(attachment.cloudinary_public_id,{
+    resource_type:attachment.resource_type,
+    type:attachment.delivery_type||"authenticated",
+    invalidate:true
+  });
+  if(!["ok","not found"].includes(String(result?.result||"").toLowerCase())) {
+    throw new Error("Cloudinary could not confirm deletion of an attachment.");
+  }
 }
 function derivePassword(password, saltHex) {
   return crypto.scryptSync(String(password), Buffer.from(saltHex, "hex"), 64).toString("hex");
@@ -784,12 +846,25 @@ app.get("/api/bootstrap", requireAuth, async (req, res, next) => {
       pool.query("SELECT * FROM categories WHERE business_id=ANY($1::uuid[]) ORDER BY position, lower(name)", [ids]),
       pool.query("SELECT * FROM tasks WHERE business_id=ANY($1::uuid[]) ORDER BY updated_at DESC", [ids])
     ]) : [{ rows: [] }, { rows: [] }];
+    const taskIds=tasks.rows.map(task=>task.id);
+    const attachmentRows=taskIds.length?await pool.query(
+      "SELECT id,task_id,file_name,mime_type,size_bytes,resource_type,created_at FROM task_attachments WHERE task_id=ANY($1::uuid[]) ORDER BY created_at",
+      [taskIds]
+    ):{rows:[]};
+    const attachmentsByTask=new Map();
+    for(const attachment of attachmentRows.rows){
+      const current=attachmentsByTask.get(attachment.task_id)||[];
+      current.push(attachment);
+      attachmentsByTask.set(attachment.task_id,current);
+    }
+    const tasksWithAttachments=tasks.rows.map(task=>({...task,attachments:attachmentsByTask.get(task.id)||[]}));
     const whatsapp=await getWhatsAppGatewayStatus();
     res.set("Cache-Control", "no-store").json({
-      businesses: businessRows, categories: categories.rows, tasks: tasks.rows,
+      businesses: businessRows, categories: categories.rows, tasks: tasksWithAttachments,
       user: req.auth,
       emailConfigured: Boolean(RESEND_API_KEY && RESEND_FROM),
-      whatsappConfigured: whatsapp.connected
+      whatsappConfigured: whatsapp.connected,
+      cloudinaryConfigured: cloudinaryIsConfigured()
     });
   } catch (e) { next(e); }
 });
@@ -1204,6 +1279,103 @@ app.patch("/api/tasks/:id",requireAuth,async(req,res,next)=>{
     next(e);
   }
 });
+app.post("/api/tasks/:id/attachments",requireAuth,express.raw({type:"application/octet-stream",limit:TASK_ATTACHMENT_MAX_BYTES}),async(req,res,next)=>{
+  let uploaded=null;
+  try{
+    const taskResult=await pool.query("SELECT id,business_id FROM tasks WHERE id=$1",[req.params.id]);
+    if(!taskResult.rowCount)return res.status(404).json({error:"Task not found."});
+    const task=taskResult.rows[0];
+    if(!await requireBusinessAccess(req,res,task.business_id,true))return;
+    const count=await pool.query("SELECT count(*)::int AS count FROM task_attachments WHERE task_id=$1",[task.id]);
+    if(count.rows[0].count>=TASK_ATTACHMENT_MAX_COUNT)return res.status(400).json({error:"A task can have up to 10 attachments."});
+    const file=validateTaskAttachment(req.body,req.get("x-file-name"),req.get("x-file-type"));
+    const client=getCloudinaryClient();
+    const suffix=crypto.randomUUID();
+    const publicId=file.resourceType==="raw"?"taskxvs-"+suffix+file.extension:"taskxvs-"+suffix;
+    uploaded=await new Promise((resolve,reject)=>{
+      const stream=client.uploader.upload_stream({
+        resource_type:file.resourceType,
+        type:"authenticated",
+        asset_folder:"TaskXVS/Task Attachments",
+        public_id:publicId,
+        display_name:file.fileName,
+        filename_override:file.fileName,
+        overwrite:false,
+        unique_filename:false,
+        backup:false,
+        tags:["taskxvs","task-attachments"],
+        context:"task_id="+task.id+"|business_id="+task.business_id
+      },(error,result)=>error?reject(error):resolve(result));
+      Readable.from(req.body).pipe(stream);
+    });
+    const saved=await pool.query(
+      "INSERT INTO task_attachments (task_id,cloudinary_asset_id,cloudinary_public_id,resource_type,delivery_type,format,version,file_name,mime_type,size_bytes,uploaded_by_username) VALUES ($1,$2,$3,$4,'authenticated',$5,$6,$7,$8,$9,$10) RETURNING id,task_id,file_name,mime_type,size_bytes,resource_type,created_at",
+      [task.id,uploaded.asset_id,uploaded.public_id,uploaded.resource_type,uploaded.format||file.extension.slice(1),uploaded.version,file.fileName,file.mimeType,uploaded.bytes,req.auth.username||req.auth.displayName||"unknown"]
+    );
+    recordActivity(req,{
+      event_type:"task_attachment_added",entity_type:"task",entity_id:task.id,business_id:task.business_id,
+      title:"Attached "+file.fileName+" to a task",details:{file_name:file.fileName,mime_type:file.mimeType,size_bytes:uploaded.bytes}
+    });
+    return res.status(201).json(saved.rows[0]);
+  }catch(error){
+    if(uploaded&&uploaded.public_id){
+      await cloudinary.uploader.destroy(uploaded.public_id,{
+        resource_type:uploaded.resource_type||"raw",type:"authenticated",invalidate:true
+      }).catch(cleanupError=>console.error("Orphan Cloudinary asset cleanup failed:",cleanupError.message));
+    }
+    if(error.status)return res.status(error.status).json({error:error.message});
+    if(error.http_code===400||error.http_code===413)return res.status(400).json({error:"Cloudinary rejected this file. Check the file type and size, then try again."});
+    next(error);
+  }
+});
+
+app.get("/api/tasks/:id/attachments/:attachmentId/download",requireAuth,async(req,res,next)=>{
+  try{
+    const result=await pool.query(
+      "SELECT a.*,t.business_id FROM task_attachments a JOIN tasks t ON t.id=a.task_id WHERE a.task_id=$1 AND a.id=$2",
+      [req.params.id,req.params.attachmentId]
+    );
+    if(!result.rowCount)return res.status(404).json({error:"Attachment not found."});
+    if(!await requireBusinessAccess(req,res,result.rows[0].business_id,false))return;
+    const attachment=result.rows[0];
+    const client=getCloudinaryClient();
+    const url=client.utils.private_download_url(
+      attachment.cloudinary_public_id,
+      attachment.format||path.extname(attachment.file_name).slice(1),
+      {
+        resource_type:attachment.resource_type,
+        type:attachment.delivery_type||"authenticated",
+        expires_at:Math.floor(Date.now()/1000)+10*60,
+        attachment:attachment.resource_type==="raw",
+      }
+    );
+    res.set("Cache-Control","no-store").redirect(302,url);
+  }catch(error){next(error);}
+});
+
+app.delete("/api/tasks/:id/attachments/:attachmentId",requireAuth,async(req,res,next)=>{
+  try{
+    const result=await pool.query(
+      "SELECT a.*,t.business_id FROM task_attachments a JOIN tasks t ON t.id=a.task_id WHERE a.task_id=$1 AND a.id=$2",
+      [req.params.id,req.params.attachmentId]
+    );
+    if(!result.rowCount)return res.status(404).json({error:"Attachment not found."});
+    const attachment=result.rows[0];
+    if(!await requireBusinessAccess(req,res,attachment.business_id,true))return;
+    await deleteTaskCloudinaryAsset(attachment);
+    await pool.query("DELETE FROM task_attachments WHERE id=$1",[attachment.id]);
+    recordActivity(req,{
+      event_type:"task_attachment_deleted",entity_type:"task",entity_id:attachment.task_id,business_id:attachment.business_id,
+      title:"Removed attachment "+attachment.file_name,details:{file_name:attachment.file_name}
+    });
+    res.json({ok:true});
+  }catch(error){
+    if(error.status)return res.status(error.status).json({error:error.message});
+    if(error.message==="Cloudinary could not confirm deletion of an attachment.")return res.status(502).json({error:error.message});
+    next(error);
+  }
+});
+
 app.patch("/api/tasks/:id/status",requireAuth,async(req,res,next)=>{
   try{
     const current=await pool.query("SELECT * FROM tasks WHERE id=$1",[req.params.id]);
@@ -1234,9 +1406,18 @@ app.delete("/api/tasks/:id",requireAuth,async(req,res,next)=>{
     const current=await pool.query("SELECT * FROM tasks WHERE id=$1",[req.params.id]);
     if(!current.rowCount)return res.status(404).json({error:"Task not found."});
     if(!await requireBusinessAccess(req,res,current.rows[0].business_id,true))return;
+    const attachments=await pool.query("SELECT * FROM task_attachments WHERE task_id=$1 ORDER BY created_at",[req.params.id]);
+    try{
+      for(const attachment of attachments.rows)await deleteTaskCloudinaryAsset(attachment);
+    }catch(cleanupError){
+      if(cleanupError.status)return res.status(cleanupError.status).json({error:cleanupError.message});
+      return res.status(502).json({
+        error:"Task was not deleted because Cloudinary could not confirm removal of every attachment. Please retry; already-removed files are safe to retry."
+      });
+    }
     await pool.query("DELETE FROM tasks WHERE id=$1",[req.params.id]);
-    res.json({ok:true});
-    recordActivity(req,{event_type:"task_deleted",entity_type:"task",entity_id:current.rows[0].id,business_id:current.rows[0].business_id,title:`Deleted task ${current.rows[0].title}`,details:{status:current.rows[0].status,deadline:current.rows[0].deadline}});
+    res.json({ok:true,deleted_attachments:attachments.rowCount});
+    recordActivity(req,{event_type:"task_deleted",entity_type:"task",entity_id:current.rows[0].id,business_id:current.rows[0].business_id,title:"Deleted task "+current.rows[0].title,details:{status:current.rows[0].status,deadline:current.rows[0].deadline,attachments_deleted:attachments.rowCount}});
     sendBusinessWhatsAppNotification(current.rows[0].business_id,"Task deleted",current.rows[0]);
   }catch(e){next(e);}
 });
@@ -1254,7 +1435,7 @@ app.post("/api/internal/notifications/deadlines",async(req,res,next)=>{
   }catch(error){next(error);}
 });
 app.get("/api/health",async(_req,res)=>{
-  try{await pool.query("SELECT 1");res.json({ok:true,service:"taskxvs",emailReady:Boolean(RESEND_API_KEY&&RESEND_FROM)});}
+  try{await pool.query("SELECT 1");res.json({ok:true,service:"taskxvs",emailReady:Boolean(RESEND_API_KEY&&RESEND_FROM),cloudinaryReady:cloudinaryIsConfigured()});}
   catch{res.status(503).json({ok:false});}
 });
 app.use(express.static(path.join(__dirname,"dist"),{index:false,maxAge:"1h"}));
