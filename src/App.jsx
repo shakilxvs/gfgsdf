@@ -11,7 +11,7 @@ import {
   NotebookPen, Instagram, ChartNoAxesCombined, ChartLine, ListChecks, PackageSearch,
   Truck, Boxes, Warehouse, ShoppingBasket, Headset, Microscope, Shapes, BadgePercent,
   Settings2, ShieldCheck, Users, UserPlus, Building2, CalendarClock, CircleUserRound,
-  Send, MessageCircle, UserRound, LockKeyhole, MailCheck, BellRing
+  Send, MessageCircle, UserRound, LockKeyhole, MailCheck, BellRing, Paperclip
 } from "lucide-react";
 
 const ICONS = {
@@ -214,7 +214,7 @@ function TaskCard({task, category, business, today, onEdit, onDelete, onStatus, 
       {task.deadline && <DeadlineView value={task.deadline} today={today}/>}
     </div>
     {task.status==="done"&&task.completion_note&&<p className="task-completion-note"><strong>Completion note</strong> {task.completion_note}</p>}
-    <div className="task-card-foot"><span><CalendarDays size={13}/>Created {formatDate(task.created_date)}</span>{task.deadline && <span>Due {formatDate(task.deadline,true)}</span>}</div>
+    <div className="task-card-foot"><span><CalendarDays size={13}/>Created {formatDate(task.created_date)}</span>{task.deadline && <span>Due {formatDate(task.deadline,true)}</span>}{(task.attachments?.length||0)>0&&<span className="task-attachment-count"><Paperclip size={13}/>{task.attachments.length} {task.attachments.length===1?"attachment":"attachments"}</span>}</div>
   </article>;
 }
 
@@ -238,6 +238,7 @@ function TaskListRow({task,category,business,today,onEdit,onDelete,onStatus,onVi
     <div className="task-row-main">
       <div className="task-row-title-line"><h3>{task.title}</h3>{business&&<span className="task-row-business">{business.name}</span>}</div>
       {task.description&&<p className="task-row-description">{task.description}</p>}
+      {(task.attachments?.length||0)>0&&<span className="task-row-attachment-count"><Paperclip size={12}/>{task.attachments.length} {task.attachments.length===1?"attachment":"attachments"}</span>}
       {task.status==="done"&&task.completion_note&&<p className="task-row-completion-note"><strong>Completion note:</strong> {task.completion_note}</p>}
     </div>
     <div className="task-row-deadline"><span className="deadline-label">DEADLINE</span><DeadlineView value={task.deadline} today={today}/></div>
@@ -876,9 +877,10 @@ function App() {
       setAuthenticated(false);setSessionUser(null);setUsers([]);setBusinesses([]);setCategories([]);setTasks([]);setActive("overview");setSearch("");
     }
   }
+  function updateTaskAttachmentState(taskId,attachment,action="add") { setTasks(current=>current.map(task=>{ if(task.id!==taskId)return task; const currentAttachments=task.attachments||[]; const next=action==="remove"?currentAttachments.filter(item=>item.id!==attachment.id):[...currentAttachments.filter(item=>item.id!==attachment.id),attachment]; return {...task,attachments:next}; })); }
   function notify(message){setToast(message);}
-  async function addTask(values){const result=await api("/api/tasks",{method:"POST",body:JSON.stringify(values)});setTasks(t=>[result,...t]);notify("Task added");}
-  async function updateTask(task,values){const result=await api(`/api/tasks/${task.id}`,{method:"PATCH",body:JSON.stringify(values)});setTasks(ts=>ts.map(t=>t.id===task.id?result:t));notify("Task updated");}
+  async function addTask(values){const result=await api("/api/tasks",{method:"POST",body:JSON.stringify(values)});setTasks(t=>[result,...t]);notify("Task added");return result;}
+  async function updateTask(task,values){const result=await api(`/api/tasks/${task.id}`,{method:"PATCH",body:JSON.stringify(values)});setTasks(ts=>ts.map(t=>t.id===task.id?{...result,attachments:t.attachments||[]} :result));notify("Task updated");return result;}
   async function removeTask(task){if(!confirm(`Delete “${task.title}” permanently?`))return;await api(`/api/tasks/${task.id}`,{method:"DELETE"});setTasks(ts=>ts.filter(t=>t.id!==task.id));notify("Task deleted");}
   async function changeStatus(task,status,note="") {
     const result=await api(`/api/tasks/${task.id}/status`,{method:"PATCH",body:JSON.stringify({status,completion_note:status==="done"?note:"",confirm_status_change:true,confirm_completion:status==="done"})});
@@ -1166,7 +1168,7 @@ function App() {
         </section> : <EmptyState title="No business selected" description="Add a business to get started." action={<Button onClick={()=>setModal("businesses")}>Add business</Button>}/>}
       </div>
     </main>
-    {modal==="task"&&<TaskForm task={editingTask} businesses={writableBusinesses} categories={categories} defaultBusiness={active==="overview"?writableBusinesses[0]?.id:active} onClose={()=>setModal(null)} onSave={values=>editingTask?updateTask(editingTask,values):addTask(values)}/>}
+    {modal==="task"&&<TaskForm task={editingTask} businesses={writableBusinesses} categories={categories} defaultBusiness={active==="overview"?writableBusinesses[0]?.id:active} onClose={()=>setModal(null)} onSave={values=>editingTask?updateTask(editingTask,values):addTask(values)} onUpdate={updateTask} onAttachmentUpdate={updateTaskAttachmentState}/>}
     {modal==="categories"&&selectedBusiness&&activeCanWrite&&<CategoryManager business={selectedBusiness} categories={categories} onClose={()=>setModal(null)} onAdd={addCategory} onEdit={editCategory} onDelete={deleteCategory}/>}
     {modal==="businesses"&&canCreateBusiness&&<BusinessManager businesses={businesses} emailConfigured={emailConfigured} isOwner={isOwner} currentUserId={sessionUser?.id} onClose={()=>setModal(null)} onAdd={addBusiness} onRename={renameBusiness} onArchive={archiveBusiness} onDelete={deleteBusiness}/>}
     {modal==="users"&&isOwner&&<UserManager users={users} businesses={businesses} onClose={()=>setModal(null)} onSave={saveUser} onDelete={deleteUser} onToggle={toggleUser}/>}
