@@ -1377,7 +1377,7 @@ app.get("/api/tasks/:id/attachments/:attachmentId/preview",requireAuth,async(req
     if(!remote.ok)throw new Error("Cloudinary could not retrieve this attachment for preview.");
     const bytes=Buffer.from(await remote.arrayBuffer());
     if(bytes.length>TASK_ATTACHMENT_MAX_BYTES)throw new Error("Attachment exceeds the preview size limit.");
-    const safeName=String(attachment.file_name||"attachment").replace(/[\\r\\n"]/g,"_");
+    const safeName=String(attachment.file_name||"attachment").replace(/[\r\n"]/g,"_");
     res.set({
       "Content-Type":attachment.mime_type||"application/octet-stream",
       "Content-Length":String(bytes.length),
