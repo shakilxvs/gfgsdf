@@ -1353,6 +1353,45 @@ app.get("/api/tasks/:id/attachments/:attachmentId/download",requireAuth,async(re
   }catch(error){next(error);}
 });
 
+app.get("/api/tasks/:id/attachments/:attachmentId/preview",requireAuth,async(req,res,next)=>{
+  try{
+    const result=await pool.query(
+      "SELECT a.*,t.business_id FROM task_attachments a JOIN tasks t ON t.id=a.task_id WHERE a.task_id=$1 AND a.id=$2",
+      [req.params.id,req.params.attachmentId]
+    );
+    if(!result.rowCount)return res.status(404).json({error:"Attachment not found."});
+    if(!await requireBusinessAccess(req,res,result.rows[0].business_id,false))return;
+    const attachment=result.rows[0];
+    const client=getCloudinaryClient();
+    const signedUrl=client.utils.private_download_url(
+      attachment.cloudinary_public_id,
+      attachment.format||path.extname(attachment.file_name).slice(1),
+      {
+        resource_type:attachment.resource_type,
+        type:attachment.delivery_type||"authenticated",
+        expires_at:Math.floor(Date.now()/1000)+5*60,
+        attachment:false
+      }
+    );
+    const remote=await fetch(signedUrl,{signal:AbortSignal.timeout(20000)});
+    if(!remote.ok)throw new Error("Cloudinary could not retrieve this attachment for preview.");
+    const bytes=Buffer.from(await remote.arrayBuffer());
+    if(bytes.length>TASK_ATTACHMENT_MAX_BYTES)throw new Error("Attachment exceeds the preview size limit.");
+    const safeName=String(attachment.file_name||"attachment").replace(/[\\r\\n"]/g,"_");
+    res.set({
+      "Content-Type":attachment.mime_type||"application/octet-stream",
+      "Content-Length":String(bytes.length),
+      "Content-Disposition":`inline; filename*=UTF-8''${encodeURIComponent(safeName)}`,
+      "X-Content-Type-Options":"nosniff",
+      "Cache-Control":"private, no-store, max-age=0"
+    });
+    return res.send(bytes);
+  }catch(error){
+    if(error.status)return res.status(error.status).json({error:error.message});
+    return res.status(502).json({error:error.message||"Attachment preview could not be loaded."});
+  }
+});
+
 app.delete("/api/tasks/:id/attachments/:attachmentId",requireAuth,async(req,res,next)=>{
   try{
     const result=await pool.query(
