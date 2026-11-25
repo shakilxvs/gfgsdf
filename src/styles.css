@@ -2737,3 +2737,105 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
     padding:7px 8px;
   }
 }
+
+
+/* Branded confirmation dialogs */
+.confirm-dialog-body {
+  display:flex;
+  align-items:flex-start;
+  gap:13px;
+  padding:15px;
+  border:1px solid #ecefe9;
+  border-radius:13px;
+  background:#fbfcfa;
+}
+.confirm-dialog-danger {
+  border-color:#f0dfda;
+  background:#fffaf8;
+}
+.confirm-dialog-neutral {
+  border-color:#e5eae3;
+  background:#f8faf7;
+}
+.confirm-dialog-icon {
+  display:grid;
+  flex:0 0 40px;
+  width:40px;
+  height:40px;
+  place-items:center;
+  border-radius:12px;
+  background:#f3e8e3;
+  color:#a95b46;
+}
+.confirm-dialog-neutral .confirm-dialog-icon {
+  background:#edf2ec;
+  color:#65816a;
+}
+.confirm-dialog-copy {
+  display:grid;
+  flex:1;
+  min-width:0;
+  gap:6px;
+}
+.confirm-dialog-copy h3 {
+  margin:1px 0 0;
+  color:#344239;
+  font-size:13px;
+  font-weight:800;
+  line-height:1.4;
+  overflow-wrap:anywhere;
+}
+.confirm-dialog-copy p {
+  margin:0;
+  color:#68766d;
+  font-size:11px;
+  line-height:1.65;
+}
+.confirm-dialog-detail {
+  margin-top:3px;
+  padding:9px 10px;
+  border-radius:8px;
+  background:rgba(255,255,255,.78);
+  color:#8b766c;
+  font-size:10px;
+  line-height:1.55;
+}
+.confirm-dialog-neutral .confirm-dialog-detail {
+  color:#758276;
+}
+.confirm-dialog-actions {
+  display:flex;
+  justify-content:flex-end;
+  align-items:center;
+  gap:8px;
+  margin-top:17px;
+}
+.confirm-dialog-actions .button {
+  min-width:95px;
+}
+.confirm-dialog-actions .button-danger {
+  background:#b94f35;
+  box-shadow:0 3px 8px rgba(185,79,53,.14);
+}
+.confirm-dialog-actions .button-danger:hover:not(:disabled) {
+  background:#a8442c;
+}
+@media (max-width: 560px) {
+  .confirm-dialog-body {
+    gap:10px;
+    padding:12px;
+  }
+  .confirm-dialog-icon {
+    flex-basis:36px;
+    width:36px;
+    height:36px;
+  }
+  .confirm-dialog-actions {
+    display:grid;
+    grid-template-columns:1fr 1fr;
+  }
+  .confirm-dialog-actions .button {
+    width:100%;
+    min-width:0;
+  }
+}
