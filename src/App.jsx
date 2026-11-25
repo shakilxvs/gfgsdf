@@ -314,12 +314,17 @@ function TaskForm({task,businesses,categories,defaultBusiness,onClose,onSave,onU
       const taskId=task?.id||saved?.id||savedTaskId;
       if(pendingFiles.length){
         const failed=[];
+        const failureMessages=[];
         for(const file of pendingFiles){
           try{const attachment=await uploadOne(taskId,file);setExistingAttachments(current=>[...current,attachment]);onAttachmentUpdate?.(taskId,attachment,"add");}
-          catch(err){failed.push(file);setError(err.message);}
+          catch(err){failed.push(file);failureMessages.push(file.name+": "+err.message);}
         }
         setPendingFiles(failed);
-        if(failed.length){setError(failed.length+" attachment(s) could not be uploaded. Your task is saved; retry the remaining files or remove them.");return;}
+        if(failed.length){
+          const detail=failureMessages.slice(0,2).join(" · ");
+          setError(detail+" Your task is saved. Fix the issue, then retry the remaining file"+(failed.length===1?"":"s")+".");
+          return;
+        }
       }
       onClose();
     }catch(err){setError(err.message);}
