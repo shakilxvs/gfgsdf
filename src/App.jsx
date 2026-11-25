@@ -810,8 +810,8 @@ function parseCsvPreview(text) {
       else field+=char;
     }else if(char==='"'&&field.length===0)quoted=true;
     else if(char===","){row.push(field);field="";}
-    else if(char==="\\n"||char==="\\r"){
-      if(char==="\\r"&&next==="\\n")i++;
+    else if(char==="\n"||char==="\r"){
+      if(char==="\r"&&next==="\n")i++;
       row.push(field);field="";
       if(row.some(value=>value!==""))rows.push(row);
       row=[];
