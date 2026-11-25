@@ -11,7 +11,7 @@ import {
   NotebookPen, Instagram, ChartNoAxesCombined, ChartLine, ListChecks, PackageSearch,
   Truck, Boxes, Warehouse, ShoppingBasket, Headset, Microscope, Shapes, BadgePercent,
   Settings2, ShieldCheck, Users, UserPlus, Building2, CalendarClock, CircleUserRound,
-  Send, MessageCircle, UserRound, LockKeyhole, MailCheck, BellRing, Paperclip
+  Send, MessageCircle, UserRound, LockKeyhole, MailCheck, BellRing, Paperclip, Download
 } from "lucide-react";
 
 const ICONS = {
@@ -800,47 +800,216 @@ function AccountSettings({account,onClose,onSave}) {
   </Modal>;
 }
 
-function TaskDetails({task,business,category,today,canWrite,onClose,onEdit,onComplete}) {
-  const status=displayStatus(task,today);
-  const completed=task.completed_at?new Date(task.completed_at).toLocaleString("en-GB",{dateStyle:"medium",timeStyle:"short"}):"Not completed";
-  return <Modal title="Task details" subtitle={business?.name||"Workspace task"} onClose={onClose} wide>
-    <div className="task-detail-content">
-      <div className="task-detail-heading"><div><h2>{task.title}</h2><p>{task.description||"No description added."}</p></div><span className={`task-detail-status ${task.status==="done"?"is-done":isOverdue(task,today)?"is-delayed":task.status==="in_progress"?"is-progress":""}`}>{status}</span></div>
-      <div className="task-detail-grid">
-        <div><span>Business</span><strong>{business?.name||"Unavailable"}</strong></div>
-        <div><span>Category</span><strong>{category?.name||"Uncategorized"}</strong></div>
-        <div><span>Priority</span><strong>{priorityLabel(task.priority)}</strong></div>
-        <div><span>Created</span><strong>{formatDate(task.created_date,true)}</strong></div>
-        <div><span>Start date</span><strong>{formatDate(task.start_date,true)}</strong></div>
-        <div><span>Deadline</span><strong>{formatDate(task.deadline,true)}</strong></div>
-        <div><span>Completed</span><strong>{completed}</strong></div>
-      </div>
-      {(task.attachments?.length||0)>0&&<section className="task-detail-section task-detail-attachments">
-        <div className="task-detail-attachments-heading"><h3><Paperclip size={15}/> Attachments</h3><span>{task.attachments.length}</span></div>
-        <div className="task-detail-attachment-grid">
-          {task.attachments.map(item=>{
-            const url="/api/tasks/"+task.id+"/attachments/"+item.id+"/download";
-            const isImage=String(item.mime_type||"").startsWith("image/");
-            return isImage
-              ? <a className="task-detail-image-preview" href={url} target="_blank" rel="noopener noreferrer" key={item.id}>
-                  <img src={url} alt={item.file_name} loading="lazy" onError={event=>{event.currentTarget.style.display="none";}}/>
-                  <span><strong>{item.file_name}</strong><small>{formatAttachmentSize(item.size_bytes)} · Open image</small></span>
-                </a>
-              : <a className="task-detail-document" href={url} target="_blank" rel="noopener noreferrer" key={item.id}>
-                  <span className="task-detail-document-icon"><FileText size={20}/></span>
-                  <span><strong>{item.file_name}</strong><small>{formatAttachmentSize(item.size_bytes)} · Download document</small></span>
-                  <ArrowUpRight size={15}/>
-                </a>;
-          })}
-        </div>
-      </section>}
-      {task.notes&&<section className="task-detail-section"><h3>Task notes</h3><p>{task.notes}</p></section>}
-      {task.completion_note&&<section className="task-detail-section task-detail-completion"><h3><CheckCheck size={15}/> Completion note</h3><p>{task.completion_note}</p></section>}
-      <div className="task-detail-actions"><Button variant="ghost" onClick={onClose}>Close</Button>{canWrite&&<><Button variant="secondary" onClick={onEdit}><Pencil size={15}/> Edit task</Button>{task.status!=="done"&&<Button onClick={onComplete}><Check size={15}/> Mark as done</Button>}</>}</div>
+function parseCsvPreview(text) {
+  const rows=[];let row=[],field="",quoted=false;
+  for(let i=0;i<text.length;i++){
+    const char=text[i],next=text[i+1];
+    if(quoted){
+      if(char==='"'&&next==='"'){field+='"';i++;}
+      else if(char==='"')quoted=false;
+      else field+=char;
+    }else if(char==='"'&&field.length===0)quoted=true;
+    else if(char===","){row.push(field);field="";}
+    else if(char==="\\n"||char==="\\r"){
+      if(char==="\\r"&&next==="\\n")i++;
+      row.push(field);field="";
+      if(row.some(value=>value!==""))rows.push(row);
+      row=[];
+      if(rows.length>=300)break;
+    }else field+=char;
+  }
+  if(rows.length<300&&(field!==""||row.length)){row.push(field);if(row.some(value=>value!==""))rows.push(row);}
+  return rows.map(values=>values.slice(0,24));
+}
+function previewCellText(value) {
+  if(value===null||value===undefined)return "";
+  if(value instanceof Date)return value.toLocaleString();
+  if(typeof value==="string"||typeof value==="number"||typeof value==="boolean")return String(value);
+  if(Array.isArray(value))return value.map(previewCellText).join("");
+  if(typeof value==="object"){
+    if(value.text!==undefined)return String(value.text);
+    if(value.result!==undefined)return previewCellText(value.result);
+    if(value.richText)return value.richText.map(part=>part.text||"").join("");
+    if(value.hyperlink)return String(value.text||value.hyperlink);
+    if(value.formula)return value.result!==undefined?previewCellText(value.result):"="+value.formula;
+    if(value.error)return String(value.error);
+  }
+  return "";
+}
+function AttachmentPreviewBody({taskId,attachment}) {
+  const extension=String(attachment.file_name||"").split(".").pop().toLowerCase();
+  const previewUrl="/api/tasks/"+taskId+"/attachments/"+attachment.id+"/preview";
+  const downloadUrl="/api/tasks/"+taskId+"/attachments/"+attachment.id+"/download";
+  const [mode,setMode]=useState("loading");
+  const [error,setError]=useState("");
+  const [sheets,setSheets]=useState([]);
+  const [activeSheet,setActiveSheet]=useState(0);
+  const [text,setText]=useState("");
+  const [showLimit,setShowLimit]=useState(false);
+  const documentRef=useRef(null);
+  const slidesRef=useRef(null);
+  useEffect(()=>{
+    let cancelled=false;
+    let pptxRenderer=null;
+    setMode("loading");setError("");setSheets([]);setText("");setShowLimit(false);
+    const isImage=String(attachment.mime_type||"").startsWith("image/");
+    if(isImage){setMode("image");return ()=>{};}
+    if(extension==="pdf"){setMode("pdf");return ()=>{};}
+    async function load(){
+      try{
+        const response=await fetch(previewUrl,{credentials:"same-origin",headers:{"Accept":"*/*"}});
+        if(!response.ok){
+          const body=await response.json().catch(()=>({}));
+          throw new Error(body.error||"Unable to load this attachment.");
+        }
+        const bytes=await response.arrayBuffer();
+        if(cancelled)return;
+        if(extension==="csv"){
+          const parsed=parseCsvPreview(new TextDecoder("utf-8").decode(bytes));
+          if(cancelled)return;
+          setSheets([{name:"CSV",rows:parsed}]);setShowLimit(parsed.length>=300);setMode("spreadsheet");
+        }else if(extension==="txt"){
+          setText(new TextDecoder("utf-8").decode(bytes));setMode("text");
+        }else if(extension==="xlsx"){
+          const module=await import("exceljs");
+          const ExcelJS=module.default||module;
+          const workbook=new ExcelJS.Workbook();
+          await workbook.xlsx.load(bytes);
+          if(cancelled)return;
+          const parsed=workbook.worksheets.map(sheet=>{
+            const rows=[];
+            sheet.eachRow({includeEmpty:true},row=>{
+              if(rows.length>=300)return;
+              rows.push(row.values.slice(1,25).map((value,index)=>previewCellText(row.getCell(index+1).value)));
+            });
+            return {name:sheet.name,rows};
+          });
+          setSheets(parsed);setShowLimit(parsed.some(sheet=>sheet.rows.length>=300));setMode("spreadsheet");
+        }else if(extension==="xls"){
+          const module=await import("xls-reader");
+          const workbook=module.readXls(new Uint8Array(bytes));
+          const parsed=(workbook.sheets||[]).map(sheet=>({
+            name:sheet.name,
+            rows:(sheet.rows||[]).slice(0,300).map(row=>(row||[]).slice(0,24).map(previewCellText))
+          }));
+          if(cancelled)return;
+          setSheets(parsed);setShowLimit((workbook.sheets||[]).some(sheet=>(sheet.rows||[]).length>300));setMode("spreadsheet");
+        }else if(extension==="docx"){
+          const module=await import("docx-preview");
+          if(cancelled)return;
+          await module.renderAsync(bytes,documentRef.current,undefined,{
+            breakPages:true,
+            ignoreWidth:false,
+            ignoreHeight:false,
+            ignoreFonts:false,
+            renderHeaders:true,
+            renderFooters:true
+          });
+          if(!cancelled)setMode("docx");
+        }else if(extension==="pptx"){
+          const module=await import("pptx-browser");
+          const PptxRenderer=module.PptxRenderer||module.default?.PptxRenderer;
+          if(!PptxRenderer)throw new Error("PowerPoint preview is unavailable in this browser.");
+          pptxRenderer=new PptxRenderer();
+          await pptxRenderer.load(new Uint8Array(bytes));
+          if(cancelled)return;
+          const total=pptxRenderer.slideCount||0;
+          const limit=Math.min(total,60);
+          for(let index=0;index<limit;index++){
+            if(cancelled)break;
+            const canvas=document.createElement("canvas");
+            canvas.className="attachment-pptx-slide";
+            canvas.setAttribute("aria-label","Slide "+(index+1));
+            await pptxRenderer.renderSlide(index,canvas,1100);
+            if(cancelled)break;
+            slidesRef.current?.appendChild(canvas);
+          }
+          if(cancelled)return;
+          setShowLimit(total>60);setMode("pptx");
+        }else{
+          setMode("unsupported");
+        }
+      }catch(err){
+        if(!cancelled){setError(err.message||"This file could not be previewed.");setMode("error");}
+      }
+    }
+    load();
+    return ()=>{
+      cancelled=true;
+      pptxRenderer?.destroy?.();
+      if(documentRef.current)documentRef.current.replaceChildren();
+      if(slidesRef.current)slidesRef.current.replaceChildren();
+    };
+  },[taskId,attachment.id,attachment.file_name,attachment.mime_type,extension,previewUrl]);
+  const activeRows=sheets[activeSheet]?.rows||[];
+  return <div className="attachment-viewer">
+    <div className="attachment-viewer-toolbar">
+      <div className="attachment-viewer-file"><strong>{attachment.file_name}</strong><small>{formatAttachmentSize(attachment.size_bytes)} · Preview</small></div>
+      <a className="attachment-viewer-download" href={downloadUrl}><Download size={15}/> Download</a>
     </div>
-  </Modal>;
+    {mode==="loading"&&<div className="attachment-viewer-state"><span className="attachment-viewer-spinner"/><strong>Preparing preview…</strong></div>}
+    {mode==="error"&&<div className="attachment-viewer-state is-error"><AlertCircle size={22}/><strong>Preview could not be loaded</strong><span>{error}</span></div>}
+    {mode==="image"&&<div className="attachment-viewer-image-wrap"><img className="attachment-viewer-image" src={previewUrl} alt={attachment.file_name}/></div>}
+    {mode==="pdf"&&<iframe className="attachment-viewer-pdf" src={previewUrl} title={attachment.file_name}/>}
+    {mode==="text"&&<pre className="attachment-viewer-text">{text||"This text file is empty."}</pre>}
+    {mode==="spreadsheet"&&<div className="attachment-viewer-spreadsheet">
+      {sheets.length>1&&<div className="attachment-sheet-tabs">{sheets.map((sheet,index)=><button type="button" className={activeSheet===index?"active":""} key={sheet.name} onClick={()=>setActiveSheet(index)}>{sheet.name}</button>)}</div>}
+      <div className="attachment-sheet-scroll"><table><tbody>{activeRows.map((row,rowIndex)=><tr key={rowIndex}>{row.map((cell,columnIndex)=>rowIndex===0?<th key={columnIndex}>{cell}</th>:<td key={columnIndex}>{cell}</td>)}</tr>)}</tbody></table></div>
+      {showLimit&&<p className="attachment-viewer-limit">Preview limited to the first 300 rows and 24 columns. Download the original file to view all data.</p>}
+    </div>}
+    {mode==="docx"&&<div className="attachment-viewer-docx"><div ref={documentRef}/></div>}
+    {mode==="pptx"&&<div className="attachment-viewer-pptx"><div ref={slidesRef}/>{showLimit&&<p className="attachment-viewer-limit">Preview limited to the first 60 slides. Download the original presentation to view all slides.</p>}</div>}
+    {mode==="unsupported"&&<div className="attachment-viewer-state"><FileText size={24}/><strong>Preview is not available for this older Office format</strong><span>Save this file as DOCX or PPTX to preview it inside TaskXVS, or use Download to open the original.</span></div>}
+  </div>;
 }
 
+function TaskDetails({task,business,category,today,canWrite,onClose,onEdit,onComplete}) {
+  const [previewAttachment,setPreviewAttachment]=useState(null);
+  const status=displayStatus(task,today);
+  const completed=task.completed_at?new Date(task.completed_at).toLocaleString("en-GB",{dateStyle:"medium",timeStyle:"short"}):"Not completed";
+  return <Modal title={previewAttachment?"Preview attachment":"Task details"} subtitle={previewAttachment?business?.name||"Workspace task":business?.name||"Workspace task"} onClose={onClose} wide>
+    {previewAttachment
+      ? <div className="task-detail-content">
+          <div className="attachment-viewer-back"><Button variant="ghost" onClick={()=>setPreviewAttachment(null)}><ArrowLeft size={15}/> Back to task</Button></div>
+          <AttachmentPreviewBody taskId={task.id} attachment={previewAttachment}/>
+        </div>
+      : <div className="task-detail-content">
+          <div className="task-detail-heading"><div><h2>{task.title}</h2><p>{task.description||"No description added."}</p></div><span className={`task-detail-status ${task.status==="done"?"is-done":isOverdue(task,today)?"is-delayed":task.status==="in_progress"?"is-progress":""}`}>{status}</span></div>
+          <div className="task-detail-grid">
+            <div><span>Business</span><strong>{business?.name||"Unavailable"}</strong></div>
+            <div><span>Category</span><strong>{category?.name||"Uncategorized"}</strong></div>
+            <div><span>Priority</span><strong>{priorityLabel(task.priority)}</strong></div>
+            <div><span>Created</span><strong>{formatDate(task.created_date,true)}</strong></div>
+            <div><span>Start date</span><strong>{formatDate(task.start_date,true)}</strong></div>
+            <div><span>Deadline</span><strong>{formatDate(task.deadline,true)}</strong></div>
+            <div><span>Completed</span><strong>{completed}</strong></div>
+          </div>
+          {(task.attachments?.length||0)>0&&<section className="task-detail-section task-detail-attachments">
+            <div className="task-detail-attachments-heading"><h3><Paperclip size={15}/> Attachments</h3><span>{task.attachments.length}</span></div>
+            <div className="task-detail-attachment-grid">
+              {task.attachments.map(item=>{
+                const previewUrl="/api/tasks/"+task.id+"/attachments/"+item.id+"/preview";
+                const isImage=String(item.mime_type||"").startsWith("image/");
+                const downloadUrl="/api/tasks/"+task.id+"/attachments/"+item.id+"/download";
+                return <div className="task-detail-attachment-card" key={item.id}>
+                  <button type="button" className={isImage?"task-detail-image-preview":"task-detail-document"} onClick={()=>setPreviewAttachment(item)}>
+                    {isImage
+                      ? <img src={previewUrl} alt={item.file_name} loading="lazy"/>
+                      : <span className="task-detail-document-icon"><FileText size={20}/></span>}
+                    <span><strong>{item.file_name}</strong><small>{formatAttachmentSize(item.size_bytes)} · Preview</small></span>
+                    {!isImage&&<Eye size={15}/>}
+                  </button>
+                  <a className="task-detail-attachment-download" href={downloadUrl} aria-label={"Download "+item.file_name} title="Download original"><Download size={15}/></a>
+                </div>;
+              })}
+            </div>
+          </section>}
+          {task.notes&&<section className="task-detail-section"><h3>Task notes</h3><p>{task.notes}</p></section>}
+          {task.completion_note&&<section className="task-detail-section task-detail-completion"><h3><CheckCheck size={15}/> Completion note</h3><p>{task.completion_note}</p></section>}
+          <div className="task-detail-actions"><Button variant="ghost" onClick={onClose}>Close</Button>{canWrite&&<><Button variant="secondary" onClick={onEdit}><Pencil size={15}/> Edit task</Button>{task.status!=="done"&&<Button onClick={onComplete}><Check size={15}/> Mark as done</Button>}</>}</div>
+        </div>}
+  </Modal>;
+}
 function CompleteTaskDialog({task,status,note,setNote,onCancel,onConfirm,busy}) {
   const label=STATUSES.find(item=>item.value===status)?.label||"To do";
   const done=status==="done";
