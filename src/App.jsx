@@ -147,8 +147,8 @@ function Brand({collapsed=false,onClick}) {
 function Button({children, variant="primary", size="normal", className="", ...props}) {
   return <button className={`button button-${variant} button-${size} ${className}`} {...props}>{children}</button>;
 }
-function IconButton({label, children, ...props}) {
-  return <button className="icon-button" aria-label={label} title={label} {...props}>{children}</button>;
+function IconButton({label, children, className="", ...props}) {
+  return <button className={`icon-button ${className}`.trim()} aria-label={label} title={label} {...props}>{children}</button>;
 }
 function EmptyState({title, description, action}) {
   return <div className="empty-state"><div className="empty-icon"><Layers3 size={19}/></div><h3>{title}</h3><p>{description}</p>{action}</div>;
