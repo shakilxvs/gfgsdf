@@ -166,6 +166,27 @@ function Modal({title, subtitle, children, onClose, wide=false}) {
     </section>
   </div>;
 }
+function ConfirmDialog({config,onCancel,onConfirm}) {
+  if(!config)return null;
+  const destructive=config.tone==="danger";
+  return <Modal title={config.heading||"Please confirm"} subtitle={config.subtitle||"Review this action before continuing."} onClose={onCancel}>
+    <div className={`confirm-dialog-body ${destructive?"confirm-dialog-danger":"confirm-dialog-neutral"}`}>
+      <div className="confirm-dialog-icon">
+        {destructive?<Trash2 size={21}/>:<Plug size={21}/>}
+      </div>
+      <div className="confirm-dialog-copy">
+        <h3>{config.title}</h3>
+        <p>{config.message}</p>
+        {config.detail&&<div className="confirm-dialog-detail">{config.detail}</div>}
+      </div>
+    </div>
+    <div className="confirm-dialog-actions">
+      <Button variant="ghost" onClick={onCancel}>{config.cancelLabel||"Cancel"}</Button>
+      <Button variant={destructive?"danger":"primary"} onClick={onConfirm}>{config.confirmLabel||"Continue"}</Button>
+    </div>
+  </Modal>;
+}
+
 
 function Login({onLogin}) {
   const [username,setUsername]=useState("shakilxvs");
@@ -256,7 +277,7 @@ function TaskListRow({task,category,business,today,onEdit,onDelete,onStatus,onVi
 const TASK_ATTACHMENT_ACCEPT=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt";
 const TASK_ATTACHMENT_EXTENSIONS=new Set(TASK_ATTACHMENT_ACCEPT.split(","));
 function formatAttachmentSize(bytes) { const value=Number(bytes||0); if(value<1024)return value+" B"; if(value<1024*1024)return (value/1024).toFixed(0)+" KB"; return (value/(1024*1024)).toFixed(1)+" MB"; }
-function TaskForm({task,businesses,categories,defaultBusiness,onClose,onSave,onUpdate,onAttachmentUpdate}) {
+function TaskForm({task,businesses,categories,defaultBusiness,onClose,onSave,onUpdate,onAttachmentUpdate,requestConfirmation}) {
   const [draft,setDraft]=useState(()=>({
     business_id:task?.business_id||defaultBusiness||businesses[0]?.id||"",
     category_id:task?.category_id||"",
@@ -299,7 +320,15 @@ function TaskForm({task,businesses,categories,defaultBusiness,onClose,onSave,onU
   }
   async function removeExistingAttachment(item) {
     const taskId=task?.id||savedTaskId; if(!taskId)return;
-    if(!confirm("Delete "+item.file_name+" from this task and Cloudinary?"))return;
+    const confirmed=await requestConfirmation({
+      heading:"Remove attachment?",
+      title:item.file_name,
+      message:"This file will be permanently removed from this task and deleted from Cloudinary.",
+      detail:"This cannot be undone.",
+      confirmLabel:"Delete attachment",
+      tone:"danger"
+    });
+    if(!confirmed)return;
     try{ await api("/api/tasks/"+taskId+"/attachments/"+item.id,{method:"DELETE"}); setExistingAttachments(current=>current.filter(file=>file.id!==item.id)); onAttachmentUpdate?.(taskId,item,"remove"); }
     catch(err){setError(err.message);}
   }
@@ -507,7 +536,7 @@ function UserManager({users,businesses,onClose,onSave,onDelete,onToggle}) {
   </Modal>;
 }
 
-function WorkspaceSettings({onClose,notify,emailConfigured}) {
+function WorkspaceSettings({onClose,notify,emailConfigured,requestConfirmation}) {
   const [status,setStatus]=useState({status:"disconnected",connected:false,qr_data_url:""});
   const [loading,setLoading]=useState(true);
   const [busy,setBusy]=useState(false);
@@ -619,7 +648,14 @@ function WorkspaceSettings({onClose,notify,emailConfigured}) {
     finally{setBusy(false);}
   }
   async function reconnect(){
-    const confirmed=window.confirm("This clears only the saved WhatsApp linked-device login. Your tasks, businesses and notification queue will remain untouched. You will need to start the GitHub worker again and scan a fresh QR code. Continue?");
+    const confirmed=await requestConfirmation({
+      heading:"Reconnect WhatsApp?",
+      title:"Clear the saved WhatsApp login",
+      message:"TaskXVS will disconnect the current linked device. You will need to start the GitHub worker again and scan a fresh QR code.",
+      detail:"Your tasks, businesses and notification queue will remain untouched.",
+      confirmLabel:"Clear login",
+      tone:"warning"
+    });
     if(!confirmed)return;
     setBusy(true);setError("");
     try{
@@ -1086,6 +1122,8 @@ function App() {
   const [activitySeenAt,setActivitySeenAt]=useState(()=>{try{return localStorage.getItem("taskxvs_activity_seen")||"";}catch{return "";}});
   const [completionBusy,setCompletionBusy]=useState(false);
   const [toast,setToast]=useState("");
+  const [confirmDialog,setConfirmDialog]=useState(null);
+  const confirmResolver=useRef(null);
   const [mobileNav,setMobileNav]=useState(false);
   const today=todayDhaka();
 
@@ -1139,9 +1177,37 @@ function App() {
   }
   function updateTaskAttachmentState(taskId,attachment,action="add") { setTasks(current=>current.map(task=>{ if(task.id!==taskId)return task; const currentAttachments=task.attachments||[]; const next=action==="remove"?currentAttachments.filter(item=>item.id!==attachment.id):[...currentAttachments.filter(item=>item.id!==attachment.id),attachment]; return {...task,attachments:next}; })); }
   function notify(message){setToast(message);}
+  function requestConfirmation(config){
+    return new Promise(resolve=>{
+      if(confirmResolver.current)confirmResolver.current(false);
+      confirmResolver.current=resolve;
+      setConfirmDialog(config);
+    });
+  }
+  function settleConfirmation(confirmed){
+    const resolve=confirmResolver.current;
+    confirmResolver.current=null;
+    setConfirmDialog(null);
+    if(resolve)resolve(confirmed);
+  }
   async function addTask(values){const result=await api("/api/tasks",{method:"POST",body:JSON.stringify(values)});setTasks(t=>[result,...t]);notify("Task added");return result;}
   async function updateTask(task,values){const result=await api(`/api/tasks/${task.id}`,{method:"PATCH",body:JSON.stringify(values)});setTasks(ts=>ts.map(t=>t.id===task.id?{...result,attachments:t.attachments||[]} :t));notify("Task updated");return result;}
-  async function removeTask(task){if(!confirm(`Delete “${task.title}” permanently?`))return;try{await api(`/api/tasks/${task.id}`,{method:"DELETE"});setTasks(ts=>ts.filter(t=>t.id!==task.id));notify("Task and attachments deleted");}catch(err){notify(err.message);}}
+  async function removeTask(task){
+    const confirmed=await requestConfirmation({
+      heading:"Delete task?",
+      title:task.title,
+      message:"This task will be permanently deleted.",
+      detail:"All attachments linked to this task will also be deleted from Cloudinary. This action cannot be undone.",
+      confirmLabel:"Delete task",
+      tone:"danger"
+    });
+    if(!confirmed)return;
+    try{
+      await api(`/api/tasks/${task.id}`,{method:"DELETE"});
+      setTasks(ts=>ts.filter(t=>t.id!==task.id));
+      notify("Task and attachments deleted");
+    }catch(err){notify(err.message);}
+  }
   async function changeStatus(task,status,note="") {
     const result=await api(`/api/tasks/${task.id}/status`,{method:"PATCH",body:JSON.stringify({status,completion_note:status==="done"?note:"",confirm_status_change:true,confirm_completion:status==="done"})});
     setTasks(ts=>ts.map(t=>t.id===task.id?result:t));
@@ -1190,10 +1256,38 @@ function App() {
   async function deleteBusiness(b){await api(`/api/businesses/${b.id}`,{method:"DELETE"});setBusinesses(bs=>bs.filter(x=>x.id!==b.id));setCategories(cs=>cs.filter(c=>c.business_id!==b.id));setTasks(ts=>ts.filter(t=>t.business_id!==b.id));if(active===b.id)setActive("overview");notify("Business deleted");}
   async function saveUser(id,data){const result=await api(id?`/api/admin/users/${id}`:"/api/admin/users",{method:id?"PATCH":"POST",body:JSON.stringify(data)});const latest=await api("/api/admin/users");setUsers(latest.users||[]);notify(id?"User updated":"User created");return result;}
   async function toggleUser(user){await api(`/api/admin/users/${user.id}`,{method:"PATCH",body:JSON.stringify({active:!user.active})});const latest=await api("/api/admin/users");setUsers(latest.users||[]);notify(user.active?"User disabled":"User enabled");}
-  async function deleteUser(user){if(!confirm(`Delete account ${user.username}? They will immediately lose access.`))return;await api(`/api/admin/users/${user.id}`,{method:"DELETE"});setUsers(us=>us.filter(u=>u.id!==user.id));notify("User deleted");}
+  async function deleteUser(user){
+    const confirmed=await requestConfirmation({
+      heading:"Delete team member?",
+      title:user.username,
+      message:"This account will be permanently deleted and the user will immediately lose access to TaskXVS.",
+      detail:"This action cannot be undone.",
+      confirmLabel:"Delete account",
+      tone:"danger"
+    });
+    if(!confirmed)return;
+    await api(`/api/admin/users/${user.id}`,{method:"DELETE"});
+    setUsers(us=>us.filter(u=>u.id!==user.id));
+    notify("User deleted");
+  }
   async function addCategory(v){const c=await api("/api/categories",{method:"POST",body:JSON.stringify(v)});setCategories(cs=>[...cs,c]);notify("Category added");}
   async function editCategory(c,patch){const next=await api(`/api/categories/${c.id}`,{method:"PATCH",body:JSON.stringify(patch)});setCategories(cs=>cs.map(x=>x.id===c.id?next:x));notify("Category updated");}
-  async function deleteCategory(c){const count=tasks.filter(t=>t.category_id===c.id).length;if(!confirm(`Delete “${c.name}”? ${count} task(s) will become uncategorized.`))return;await api(`/api/categories/${c.id}`,{method:"DELETE"});setCategories(cs=>cs.filter(x=>x.id!==c.id));setTasks(ts=>ts.map(t=>t.category_id===c.id?{...t,category_id:null}:t));notify("Category deleted");}
+  async function deleteCategory(c){
+    const count=tasks.filter(t=>t.category_id===c.id).length;
+    const confirmed=await requestConfirmation({
+      heading:"Delete category?",
+      title:c.name,
+      message:"This category will be permanently removed.",
+      detail:count+` task(s) will remain in ${c.name}’s business but become uncategorized.`,
+      confirmLabel:"Delete category",
+      tone:"danger"
+    });
+    if(!confirmed)return;
+    await api(`/api/categories/${c.id}`,{method:"DELETE"});
+    setCategories(cs=>cs.filter(x=>x.id!==c.id));
+    setTasks(ts=>ts.map(t=>t.category_id===c.id?{...t,category_id:null}:t));
+    notify("Category deleted");
+  }
 
   const isOwner=sessionUser?.role==="owner";
   const canWriteBusiness=id=>isOwner||businesses.find(b=>b.id===id)?.permission==="write";
@@ -1428,15 +1522,16 @@ function App() {
         </section> : <EmptyState title="No business selected" description="Add a business to get started." action={<Button onClick={()=>setModal("businesses")}>Add business</Button>}/>}
       </div>
     </main>
-    {modal==="task"&&<TaskForm task={editingTask} businesses={writableBusinesses} categories={categories} defaultBusiness={active==="overview"?writableBusinesses[0]?.id:active} onClose={()=>setModal(null)} onSave={values=>editingTask?updateTask(editingTask,values):addTask(values)} onUpdate={updateTask} onAttachmentUpdate={updateTaskAttachmentState}/>}
+    {modal==="task"&&<TaskForm task={editingTask} businesses={writableBusinesses} categories={categories} defaultBusiness={active==="overview"?writableBusinesses[0]?.id:active} onClose={()=>setModal(null)} onSave={values=>editingTask?updateTask(editingTask,values):addTask(values)} onUpdate={updateTask} onAttachmentUpdate={updateTaskAttachmentState} requestConfirmation={requestConfirmation}/>}
     {modal==="categories"&&selectedBusiness&&activeCanWrite&&<CategoryManager business={selectedBusiness} categories={categories} onClose={()=>setModal(null)} onAdd={addCategory} onEdit={editCategory} onDelete={deleteCategory}/>}
     {modal==="businesses"&&canCreateBusiness&&<BusinessManager businesses={businesses} emailConfigured={emailConfigured} isOwner={isOwner} currentUserId={sessionUser?.id} onClose={()=>setModal(null)} onAdd={addBusiness} onRename={renameBusiness} onArchive={archiveBusiness} onDelete={deleteBusiness}/>}
     {modal==="users"&&isOwner&&<UserManager users={users} businesses={businesses} onClose={()=>setModal(null)} onSave={saveUser} onDelete={deleteUser} onToggle={toggleUser}/>}
     {viewingTask&&<TaskDetails task={tasks.find(t=>t.id===viewingTask.id)||viewingTask} business={businesses.find(b=>b.id===viewingTask.business_id)} category={categories.find(c=>c.id===viewingTask.category_id)} today={today} canWrite={canWriteBusiness(viewingTask.business_id)} onClose={()=>setViewingTask(null)} onEdit={()=>{setEditingTask(tasks.find(t=>t.id===viewingTask.id)||viewingTask);setViewingTask(null);setModal("task");}} onComplete={()=>requestStatusChange(tasks.find(t=>t.id===viewingTask.id)||viewingTask,"done")}/>}
     {completingTask&&<CompleteTaskDialog task={completingTask} status={requestedStatus} note={completionNote} setNote={setCompletionNote} onCancel={()=>{setCompletingTask(null);setCompletionNote("");}} onConfirm={confirmCompletion} busy={completionBusy}/>}
     {activityOpen&&isOwner&&<ActivityFeed items={activityItems} onClose={()=>setActivityOpen(false)}/>}
-    {settingsOpen&&isOwner&&<WorkspaceSettings onClose={()=>setSettingsOpen(false)} notify={notify} emailConfigured={emailConfigured}/>}
+    {settingsOpen&&isOwner&&<WorkspaceSettings onClose={()=>setSettingsOpen(false)} notify={notify} emailConfigured={emailConfigured} requestConfirmation={requestConfirmation}/>}
     {accountOpen&&<AccountSettings account={accountDetails||sessionUser} onClose={()=>setAccountOpen(false)} onSave={saveAccount}/>}
+    {confirmDialog&&<ConfirmDialog config={confirmDialog} onCancel={()=>settleConfirmation(false)} onConfirm={()=>settleConfirmation(true)}/>}
     {toast&&<div className="toast-message"><Check size={15}/>{toast}</div>}
   </div>;
 }
