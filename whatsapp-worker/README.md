@@ -1,37 +1,62 @@
-# TaskXVS WhatsApp cloud worker
+# TaskXVS WhatsApp worker
 
-This worker runs on standard GitHub-hosted runners for this public repository. It uses scheduled runner sessions rather than a paid VPS or a phone that must stay online.
+This worker runs on standard GitHub-hosted runners. It uses scheduled runner sessions rather than a paid VPS or a phone that must stay online.
 
 ## Dedicated Neon database
 
 The worker uses the existing `taskxvs` database in the dedicated `shakilxvs-taskxvs` Neon project.
 
-Its PostgreSQL role is `taskxvs_whatsapp_worker`. The role has read/write permissions only in the `whatsapp_gateway` schema. It must not be given access to application tables in the `public` schema.
+Its PostgreSQL role is `taskxvs_whatsapp_worker`. Its intended read/write permissions are limited to the `whatsapp_gateway` schema. Do not give it access to application task tables in the `public` schema.
 
 The schema is defined in `whatsapp-worker/schema.sql`. The application role is `taskxvs_app`. Do not use the old `shlomo_tasks` database or `shlomo_app` role.
 
 ## GitHub Actions secret
 
-Add or update this repository Actions secret:
+Repository Actions secret:
 
 ```
 TASKXVS_WHATSAPP_DATABASE_URL
 ```
 
-The value must be the Neon connection string for database `taskxvs` using role `taskxvs_whatsapp_worker` in the `shakilxvs-taskxvs` project. Do not use the application role connection string.
+The value must be the Neon connection string for database `taskxvs` using role `taskxvs_whatsapp_worker` in the dedicated `shakilxvs-taskxvs` project. Do not use the application role connection string.
 
 Never commit the connection string, expose it in Actions variables, print it in logs, or paste it into an issue or pull request.
 
 ## Runtime behavior
 
-The workflow is intentionally manual-only until the owner verifies QR pairing and a successful test message. Do not restore the six-hour schedule before those checks pass.
+The workflow is automatically scheduled with cron `0 */6 * * *` (every six hours, UTC). It also retains `workflow_dispatch` for an owner-triggered manual run.
 
-When scheduled, the worker keeps one WhatsApp Web session connected for up to 345 minutes. While connected, it checks the Neon queue every 20 minutes to reduce compute usage on the Neon Free plan. Delivery may therefore be delayed by up to 20 minutes while a session is active, plus any gap between runner sessions. GitHub can also delay scheduled workflow starts. This is not a 24/7 delivery guarantee.
+Each session can run for up to 345 minutes (5 hours 45 minutes). While connected, the worker checks the Neon outbound queue every 20 minutes to reduce compute use on the Neon Free plan. GitHub may delay scheduled starts, and there can be a gap between sessions. This is **not** a guaranteed 24/7 connection.
 
-## Pairing and safety
+The workflow uses the concurrency group `taskxvs-whatsapp-cloud-worker` with `cancel-in-progress: false`, so a scheduled run should not cancel an active run.
 
-Run the workflow manually from GitHub Actions. In TaskXVS owner Settings, refresh the WhatsApp status and scan the QR code using WhatsApp on the dedicated sender phone: **Linked devices → Link a device**.
+The worker also reads a single scheduler credential from `whatsapp_gateway.scheduler_token` and calls the authenticated TaskXVS internal deadline-reminder endpoint. It does not read task records or the owner reminder ledger. Do not expose or copy the scheduler credential.
 
-The sender phone is only needed for pairing, but the linked session may need to be re-established if WhatsApp logs it out. If the phone unlinks the device or Baileys reports a connection conflict (440), the worker stops instead of looping with invalid or competing credentials. In TaskXVS owner Settings, choose **Reconnect WhatsApp** to clear only the saved WhatsApp auth keys. Then start the workflow manually and scan the new QR code. Do not start another worker run while an earlier run is active; the workflow uses a concurrency group to keep sessions serialized.
+## Current WhatsApp provider
 
-This worker uses Baileys, an unofficial WhatsApp Web client, not Meta's official Cloud API. Unofficial clients can be restricted by WhatsApp and are not a guaranteed provider integration. Use a dedicated sender number and send only to recipients who explicitly opted in.
+This worker uses Baileys, an unofficial WhatsApp Web client. It is not Meta's official Cloud API. The sender may be restricted by WhatsApp and scheduled sessions have delivery gaps. Use the dedicated sender number and send only to opted-in recipients.
+
+Meta Cloud API / Coexistence is being prepared separately. Do not remove or replace this worker until the official integration has been approved, implemented, tested end to end, and the owner explicitly approves cutover.
+
+See [the Meta Cloud API handover](../docs/META-WHATSAPP-CLOUD-API-HANDOVER.md) for the current Meta review status and safety requirements.
+
+## Pairing and recovery
+
+The sender phone is used to pair the linked device through WhatsApp **Linked devices → Link a device**. A linked session may need to be re-established if WhatsApp logs it out.
+
+If the phone unlinks the device or Baileys reports a connection conflict (440), the worker stops instead of looping with invalid or competing credentials. The TaskXVS owner Settings includes a **Reconnect WhatsApp** action that clears the saved WhatsApp auth state. Use it only when the owner explicitly authorizes a reset, because it requires a fresh QR pairing.
+
+Do not start another worker run while an earlier run is active.
+
+## Known notification-log permission limitation
+
+As checked against the live dedicated database on 2026-11-25:
+- The worker can process `whatsapp_gateway.outbound_queue` and access its WhatsApp auth state.
+- The worker cannot read `public.tasks` or `public.owner_reminder_email_runs`, as intended.
+- The worker role does **not** have UPDATE permission on `public.whatsapp_notification_logs`.
+
+The current worker code attempts to update the matching public notification-log row after a send, but the update is caught/logged when PostgreSQL denies permission. The queue send can still succeed; the public notification-log status may therefore remain stale for future sends until a deliberately scoped fix is implemented.
+
+A one-time metadata reconciliation previously corrected 36 rows where the outbound queue already showed `sent` but the notification log still showed `queued`. No messages were resent. The last verification showed 36 queue rows and 36 matching sent notification-log rows.
+
+Do not solve this by granting the worker broad access to the `public` schema or task tables. Design a narrow least-privilege mechanism first.
