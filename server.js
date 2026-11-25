@@ -1302,6 +1302,7 @@ app.post("/api/tasks/:id/attachments",requireAuth,express.raw({type:"application
         filename_override:file.fileName,
         overwrite:false,
         unique_filename:false,
+        backup:false,
         tags:["taskxvs","task-attachments"],
         context:"task_id="+task.id+"|business_id="+task.business_id
       },(error,result)=>error?reject(error):resolve(result));
@@ -1346,7 +1347,6 @@ app.get("/api/tasks/:id/attachments/:attachmentId/download",requireAuth,async(re
         type:attachment.delivery_type||"authenticated",
         expires_at:Math.floor(Date.now()/1000)+10*60,
         attachment:attachment.resource_type==="raw",
-        target_filename:attachment.file_name
       }
     );
     res.set("Cache-Control","no-store").redirect(302,url);
@@ -1410,6 +1410,7 @@ app.delete("/api/tasks/:id",requireAuth,async(req,res,next)=>{
     try{
       for(const attachment of attachments.rows)await deleteTaskCloudinaryAsset(attachment);
     }catch(cleanupError){
+      if(cleanupError.status)return res.status(cleanupError.status).json({error:cleanupError.message});
       return res.status(502).json({
         error:"Task was not deleted because Cloudinary could not confirm removal of every attachment. Please retry; already-removed files are safe to retry."
       });
