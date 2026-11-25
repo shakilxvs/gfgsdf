@@ -947,7 +947,7 @@ function App() {
   function updateTaskAttachmentState(taskId,attachment,action="add") { setTasks(current=>current.map(task=>{ if(task.id!==taskId)return task; const currentAttachments=task.attachments||[]; const next=action==="remove"?currentAttachments.filter(item=>item.id!==attachment.id):[...currentAttachments.filter(item=>item.id!==attachment.id),attachment]; return {...task,attachments:next}; })); }
   function notify(message){setToast(message);}
   async function addTask(values){const result=await api("/api/tasks",{method:"POST",body:JSON.stringify(values)});setTasks(t=>[result,...t]);notify("Task added");return result;}
-  async function updateTask(task,values){const result=await api(`/api/tasks/${task.id}`,{method:"PATCH",body:JSON.stringify(values)});setTasks(ts=>ts.map(t=>t.id===task.id?{...result,attachments:t.attachments||[]} :result));notify("Task updated");return result;}
+  async function updateTask(task,values){const result=await api(`/api/tasks/${task.id}`,{method:"PATCH",body:JSON.stringify(values)});setTasks(ts=>ts.map(t=>t.id===task.id?{...result,attachments:t.attachments||[]} :t));notify("Task updated");return result;}
   async function removeTask(task){if(!confirm(`Delete “${task.title}” permanently?`))return;await api(`/api/tasks/${task.id}`,{method:"DELETE"});setTasks(ts=>ts.filter(t=>t.id!==task.id));notify("Task deleted");}
   async function changeStatus(task,status,note="") {
     const result=await api(`/api/tasks/${task.id}/status`,{method:"PATCH",body:JSON.stringify({status,completion_note:status==="done"?note:"",confirm_status_change:true,confirm_completion:status==="done"})});
