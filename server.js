@@ -846,12 +846,25 @@ app.get("/api/bootstrap", requireAuth, async (req, res, next) => {
       pool.query("SELECT * FROM categories WHERE business_id=ANY($1::uuid[]) ORDER BY position, lower(name)", [ids]),
       pool.query("SELECT * FROM tasks WHERE business_id=ANY($1::uuid[]) ORDER BY updated_at DESC", [ids])
     ]) : [{ rows: [] }, { rows: [] }];
+    const taskIds=tasks.rows.map(task=>task.id);
+    const attachmentRows=taskIds.length?await pool.query(
+      "SELECT id,task_id,file_name,mime_type,size_bytes,resource_type,created_at FROM task_attachments WHERE task_id=ANY($1::uuid[]) ORDER BY created_at",
+      [taskIds]
+    ):{rows:[]};
+    const attachmentsByTask=new Map();
+    for(const attachment of attachmentRows.rows){
+      const current=attachmentsByTask.get(attachment.task_id)||[];
+      current.push(attachment);
+      attachmentsByTask.set(attachment.task_id,current);
+    }
+    const tasksWithAttachments=tasks.rows.map(task=>({...task,attachments:attachmentsByTask.get(task.id)||[]}));
     const whatsapp=await getWhatsAppGatewayStatus();
     res.set("Cache-Control", "no-store").json({
-      businesses: businessRows, categories: categories.rows, tasks: tasks.rows,
+      businesses: businessRows, categories: categories.rows, tasks: tasksWithAttachments,
       user: req.auth,
       emailConfigured: Boolean(RESEND_API_KEY && RESEND_FROM),
-      whatsappConfigured: whatsapp.connected
+      whatsappConfigured: whatsapp.connected,
+      cloudinaryConfigured: cloudinaryIsConfigured()
     });
   } catch (e) { next(e); }
 });
