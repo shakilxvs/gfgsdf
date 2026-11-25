@@ -17,7 +17,7 @@ const RUN_MINUTES = Math.max(10, Number(process.env.WHATSAPP_WORKER_MINUTES || 3
 const RUN_UNTIL = Date.now() + RUN_MINUTES * 60_000;
 const QUEUE_POLL_INTERVAL_MS = 20 * 60 * 1000;
 const TASKXVS_BASE_URL = process.env.TASKXVS_BASE_URL || "https://task.shakilxvs.com";
-const logger = pino({ level: "silent" });
+const logger = pino({ level: process.env.LOG_LEVEL || "info" });
 
 if (!DATABASE_URL) {
   throw new Error("DATABASE_URL is required. Set GitHub Actions secret TASKXVS_WHATSAPP_DATABASE_URL.");
@@ -139,7 +139,7 @@ async function claimQueueBatch() {
        SET status='sending',attempts=attempts+1,error_message=NULL,updated_at=now()
        FROM ready
        WHERE q.id=ready.id
-       RETURNING q.id,q.recipient_number,q.message_body,q.attempts`
+       RETURNING q.id,q.notification_log_id,q.recipient_number,q.message_body,q.attempts`
     );
     await client.query("COMMIT");
     return result.rows;
@@ -193,19 +193,42 @@ async function processQueue(socket, isConnected) {
     try {
       const digits = String(item.recipient_number).replace(/\D/g, "");
       if (digits.length < 8) throw new Error("Invalid recipient phone number.");
-      const result = await socket.sendMessage(digits + "@s.whatsapp.net", { text: item.message_body });
+      const pnJid = digits + "@s.whatsapp.net";
+      let destinationJid = pnJid;
+      try {
+        const lidMapping = socket.signalRepository?.lidMapping;
+        const mappedLid = await lidMapping?.getLIDForPN?.(pnJid);
+        if (mappedLid) destinationJid = mappedLid;
+      } catch (mappingError) {
+        logger.warn({ queueId: item.id, error: mappingError.message }, "Could not resolve the cached WhatsApp LID; using the phone-number JID");
+      }
+      const result = await socket.sendMessage(destinationJid, { text: item.message_body });
+      const messageId = result?.key?.id || null;
       await pool.query(
         "UPDATE whatsapp_gateway.outbound_queue SET status='sent',sent_at=now(),updated_at=now(),error_message=NULL WHERE id=$1",
         [item.id]
       );
-      logger.info({ queueId: item.id, messageId: result?.key?.id || null }, "WhatsApp message sent");
+      if (item.notification_log_id) {
+        await pool.query(
+          "UPDATE public.whatsapp_notification_logs SET status='sent',wamid=$2,sent_at=now(),error_message=NULL WHERE id=$1",
+          [item.notification_log_id, messageId]
+        ).catch(error => logger.error({ queueId: item.id, error: error.message }, "WhatsApp sent-log status update failed"));
+      }
+      logger.info({ queueId: item.id, messageId, recipientJidType: destinationJid.endsWith("@lid") ? "lid" : "phone" }, "WhatsApp message sent to WhatsApp");
     } catch (error) {
       const retry = !isConnected() && item.attempts < 3;
+      const errorMessage = String(error.message || error).slice(0, 900);
       await pool.query(
         "UPDATE whatsapp_gateway.outbound_queue SET status=$2,error_message=$3,updated_at=now() WHERE id=$1",
-        [item.id, retry ? "queued" : "failed", String(error.message || error).slice(0, 900)]
+        [item.id, retry ? "queued" : "failed", errorMessage]
       );
-      logger.error({ queueId: item.id, error: String(error.message || error) }, "WhatsApp message failed");
+      if (item.notification_log_id) {
+        await pool.query(
+          "UPDATE public.whatsapp_notification_logs SET status=$2,error_message=$3 WHERE id=$1",
+          [item.notification_log_id, retry ? "queued" : "failed", errorMessage]
+        ).catch(logError => logger.error({ queueId: item.id, error: logError.message }, "WhatsApp failure-log status update failed"));
+      }
+      logger.error({ queueId: item.id, error: errorMessage }, "WhatsApp message failed");
     }
     await sleep(3500);
   }
