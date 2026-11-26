@@ -265,9 +265,9 @@ export function RichTextEditor({ value, onChange }) {
   function normalizeLink(value) {
     const trimmed = String(value || "").trim();
     if (!trimmed) return { error: "Enter a website address or email address." };
-    if (/[\\s<>]/.test(trimmed)) return { error: "Enter a valid website address or email address." };
+    if (/[\s<>]/.test(trimmed)) return { error: "Enter a valid website address or email address." };
 
-    if (/^(?:https?:\\/\\/)/i.test(trimmed)) {
+    if (/^(?:https?:\/\/)/i.test(trimmed)) {
       try {
         const parsed = new URL(trimmed);
         if (parsed.hostname) return { href: parsed.href };
@@ -277,24 +277,24 @@ export function RichTextEditor({ value, onChange }) {
 
     if (/^(?:mailto:)/i.test(trimmed)) {
       const email = trimmed.slice(7);
-      return /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)
+      return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)
         ? { href: "mailto:" + email }
         : { error: "Enter a valid email address." };
     }
 
     if (/^(?:tel:)/i.test(trimmed)) {
       const phone = trimmed.slice(4);
-      return /^[+\\d().-]{5,24}$/.test(phone)
+      return /^[+\d().-]{5,24}$/.test(phone)
         ? { href: "tel:" + phone }
         : { error: "Enter a valid phone number." };
     }
 
-    if (/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(trimmed)) {
+    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
       return { href: "mailto:" + trimmed };
     }
 
-    const domainCandidate = trimmed.replace(/^www\\./i, "");
-    if (/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\\.[a-z]{2,}(?::\\d+)?(?:[/?#][^\\s]*)?$/i.test(domainCandidate)) {
+    const domainCandidate = trimmed.replace(/^www\./i, "");
+    if (/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}(?::\d+)?(?:[/?#][^\s]*)?$/i.test(domainCandidate)) {
       try {
         const parsed = new URL("https://" + trimmed);
         if (parsed.hostname) return { href: parsed.href };
@@ -364,7 +364,7 @@ export function RichTextEditor({ value, onChange }) {
     const plain = event.clipboardData?.getData("text/plain") || "";
     const safePlain = plain
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-      .replace(/\\r\\n?/g, "\\n").replace(/\\n/g, "<br>");
+      .replace(/\r\n?/g, "\n").replace(/\n/g, "<br>");
     document.execCommand("insertHTML", false, clean || safePlain);
     syncValue();
   }
