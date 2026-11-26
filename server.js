@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizeWhatsAppNotificationStatus } from "./src/whatsappNotificationStatus.js";
+import { sanitizeTaskDescription, taskDescriptionToPlainText, taskDescriptionToWhatsApp } from "./src/taskRichText.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 pg.types.setTypeParser(1082, value => value);
@@ -45,7 +46,7 @@ app.use(helmet({
   }},
   crossOriginEmbedderPolicy: false
 }));
-app.use(express.json({ limit: "1mb", verify:(req,res,buf)=>{req.rawBody=Buffer.from(buf);} }));
+app.use(express.json({ limit: "5mb", verify:(req,res,buf)=>{req.rawBody=Buffer.from(buf);} }));
 
 function safeEqual(a, b) {
   const left = Buffer.from(String(a));
@@ -454,9 +455,11 @@ async function sendBusinessNotification(business,event,task){
  const intro={"Task added":"A new task has been added to your workspace.","Task delayed":"The deadline has passed and this task still needs attention.","Task done":"This task has been marked as done.","In progress":"Work has started on this task."}[event]||"There is an update to your workspace.";
  const esc=escapeHtml,deadline=task.deadline?new Date(task.deadline+"T00:00:00Z").toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric",timeZone:"UTC"}):"No deadline set";
  const status=event==="Task delayed"?"Delayed":task.status==="done"?"Done":task.status==="in_progress"?"In progress":"To do",subject=`[${business.name}] ${event}: ${task.title}`;
- const text=[`TASKXVS · ${event}`,intro,`Business: ${business.name}`,`Task: ${task.title}`,`Deadline: ${deadline}`,`Status: ${status}`,`Priority: ${task.priority||"normal"}`,task.description||"",task.completion_note?`Completion note: ${task.completion_note}`:"","https://taskxvs.onrender.com"].filter(Boolean).join("\n\n");
+ const descriptionHtml=sanitizeTaskDescription(task.description);
+ const descriptionText=taskDescriptionToPlainText(task.description);
+ const text=[`TASKXVS · ${event}`,intro,`Business: ${business.name}`,`Task: ${task.title}`,`Deadline: ${deadline}`,`Status: ${status}`,`Priority: ${task.priority||"normal"}`,descriptionText,task.completion_note?`Completion note: ${task.completion_note}`:"","https://task.shakilxvs.com"].filter(Boolean).join("\n\n");
  const accent=event==="Task delayed"?"#e60023":event==="Task done"?"#287044":"#333333";
- const html=`<!doctype html><html><body style="margin:0;padding:28px 12px;background:#f5f5f3;font-family:Arial,sans-serif;color:#171717"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;margin:auto;background:#fff;border:1px solid #e7e7e3;border-radius:18px"><tr><td style="padding:22px 26px;border-bottom:1px solid #eee"><b style="display:inline-block;padding:9px 12px;background:#e60023;color:white;border-radius:9px">X</b><b style="padding-left:10px;letter-spacing:2px">TASKXVS</b><span style="float:right;color:#777;font-size:12px;padding-top:10px">${esc(business.name)}</span></td></tr><tr><td style="padding:30px 26px"><span style="font-size:11px;font-weight:bold;letter-spacing:1px;color:${accent}">${esc(event.toUpperCase())}</span><h1 style="font-size:26px;line-height:1.2;margin:14px 0 8px">${esc(event)}</h1><p style="font-size:14px;line-height:1.6;color:#666;margin:0 0 22px">${esc(intro)}</p><div style="padding:19px;border:1px solid #e8e8e4;border-radius:13px"><small style="color:#888">TASK</small><h2 style="font-size:19px;margin:8px 0">${esc(task.title)}</h2>${task.description?`<p style="font-size:13px;line-height:1.6;color:#666">${esc(task.description)}</p>`:""}<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-top:1px solid #eee;margin-top:16px"><tr><td style="padding-top:12px;color:#888;font-size:11px">DEADLINE</td><td align="right" style="padding-top:12px;font-size:12px;font-weight:bold">${esc(deadline)}</td></tr><tr><td style="padding-top:10px;color:#888;font-size:11px">STATUS</td><td align="right" style="padding-top:10px;font-size:12px;font-weight:bold">${esc(status)}</td></tr><tr><td style="padding-top:10px;color:#888;font-size:11px">PRIORITY</td><td align="right" style="padding-top:10px;font-size:12px;font-weight:bold;text-transform:capitalize">${esc(task.priority||"normal")}</td></tr></table>${task.completion_note?`<p style="margin:16px 0 0;padding:13px;background:#f3f6f2;border-radius:9px;font-size:13px;line-height:1.6"><b>Completion note</b><br>${esc(task.completion_note)}</p>`:""}</div><p style="margin:24px 0"><a href="https://taskxvs.onrender.com" style="display:inline-block;padding:13px 20px;border-radius:999px;background:#e60023;color:#fff;text-decoration:none;font-weight:bold;font-size:13px">Open TaskXVS →</a></p></td></tr><tr><td style="padding:18px 26px;background:#fafaf9;border-top:1px solid #eee;color:#888;font-size:11px">Notifications are enabled for ${esc(business.name)}.<br>TaskXVS notifications</td></tr></table></body></html>`;
+ const html=`<!doctype html><html><body style="margin:0;padding:28px 12px;background:#f5f5f3;font-family:Arial,sans-serif;color:#171717"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;margin:auto;background:#fff;border:1px solid #e7e7e3;border-radius:18px"><tr><td style="padding:22px 26px;border-bottom:1px solid #eee"><b style="display:inline-block;padding:9px 12px;background:#e60023;color:white;border-radius:9px">X</b><b style="padding-left:10px;letter-spacing:2px">TASKXVS</b><span style="float:right;color:#777;font-size:12px;padding-top:10px">${esc(business.name)}</span></td></tr><tr><td style="padding:30px 26px"><span style="font-size:11px;font-weight:bold;letter-spacing:1px;color:${accent}">${esc(event.toUpperCase())}</span><h1 style="font-size:26px;line-height:1.2;margin:14px 0 8px">${esc(event)}</h1><p style="font-size:14px;line-height:1.6;color:#666;margin:0 0 22px">${esc(intro)}</p><div style="padding:19px;border:1px solid #e8e8e4;border-radius:13px"><small style="color:#888">TASK</small><h2 style="font-size:19px;margin:8px 0">${esc(task.title)}</h2>${descriptionHtml?`<div style="font-size:13px;line-height:1.6;color:#666;margin-top:10px">${descriptionHtml}</div>`:""}<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-top:1px solid #eee;margin-top:16px"><tr><td style="padding-top:12px;color:#888;font-size:11px">DEADLINE</td><td align="right" style="padding-top:12px;font-size:12px;font-weight:bold">${esc(deadline)}</td></tr><tr><td style="padding-top:10px;color:#888;font-size:11px">STATUS</td><td align="right" style="padding-top:10px;font-size:12px;font-weight:bold">${esc(status)}</td></tr><tr><td style="padding-top:10px;color:#888;font-size:11px">PRIORITY</td><td align="right" style="padding-top:10px;font-size:12px;font-weight:bold;text-transform:capitalize">${esc(task.priority||"normal")}</td></tr></table>${task.completion_note?`<p style="margin:16px 0 0;padding:13px;background:#f3f6f2;border-radius:9px;font-size:13px;line-height:1.6"><b>Completion note</b><br>${esc(task.completion_note)}</p>`:""}</div><p style="margin:24px 0"><a href="https://taskxvs.onrender.com" style="display:inline-block;padding:13px 20px;border-radius:999px;background:#e60023;color:#fff;text-decoration:none;font-weight:bold;font-size:13px">Open TaskXVS →</a></p></td></tr><tr><td style="padding:18px 26px;background:#fafaf9;border-top:1px solid #eee;color:#888;font-size:11px">Notifications are enabled for ${esc(business.name)}.<br>TaskXVS notifications</td></tr></table></body></html>`;
  try {
   const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:`Bearer ${RESEND_API_KEY}`,"Content-Type":"application/json"},body:JSON.stringify({from:RESEND_FROM,to,subject,html,text})});
   if(!response.ok){console.error("Task notification email failed:",response.status,(await response.text()).slice(0,500));return false;}
@@ -614,7 +617,7 @@ function buildDeadlineReminderEmail(tasks,prefs,daysBefore,sendDate,dueDate){
   const businessSections=[...groups.values()].map(group=>{
     const items=group.tasks.map(task=>`<tr><td style="padding:13px 14px;border-top:1px solid #eee">
       <a href="https://task.shakilxvs.com/?business=${encodeURIComponent(group.id)}" style="color:#1f2721;font-size:13px;font-weight:700;text-decoration:none">${esc(task.title)}</a>
-      <div style="margin-top:5px;color:#777;font-size:11px;line-height:1.5">${esc(task.description||"No description")}</div>
+      <div style="margin-top:5px;color:#777;font-size:11px;line-height:1.5">${sanitizeTaskDescription(task.description||"No description")}</div>
       <div style="margin-top:7px;color:#8b8b83;font-size:10px">${esc(task.status==="in_progress"?"In progress":"To do")} · ${esc(String(task.priority||"normal").toUpperCase())} priority</div>
     </td></tr>`).join("");
     return `<div style="margin-top:16px;border:1px solid #e9e9e5;border-radius:13px;overflow:hidden">
@@ -626,7 +629,7 @@ function buildDeadlineReminderEmail(tasks,prefs,daysBefore,sendDate,dueDate){
     "TASKXVS · DEADLINE REMINDER",
     `${tasks.length} open task(s) are due ${dayLabel}.`,
     `Deadline: ${formatIsoDate(dueDate,prefs.timezone)}`,
-    ...[...groups.values()].flatMap(group=>[`\n${group.name}`,...group.tasks.map(task=>`• ${task.title} | ${task.status} | ${task.priority}${task.description?" | "+task.description:""}`)]),
+    ...[...groups.values()].flatMap(group=>[`\n${group.name}`,...group.tasks.map(task=>`• ${task.title} | ${task.status} | ${task.priority}${task.description?" | "+taskDescriptionToPlainText(task.description):""}`)]),
     "Open TaskXVS: https://task.shakilxvs.com"
   ].join("\n");
   const html=`<!doctype html><html><body style="margin:0;padding:28px 12px;background:#f4f4f1;font-family:Arial,sans-serif;color:#171717">
@@ -763,26 +766,28 @@ async function sendBusinessWhatsAppNotification(businessId,event,task) {
     const priorityKey=String(task?.priority||"normal").toLowerCase();
     const priority=priorities[priorityKey]||{emoji:"⚪",label:String(task?.priority||"Normal")};
     const title=String(task?.title||"Workspace update").trim();
-    const description=String(task?.description||"").trim().slice(0,700);
+    const description=taskDescriptionToWhatsApp(task?.description,700);
     const deadline=task?.deadline
       ? new Date(String(task.deadline).slice(0,10)+"T00:00:00Z").toLocaleDateString("en-GB",{
           day:"2-digit",month:"short",year:"numeric",timeZone:"UTC"
         })
       : "No deadline set";
-    const taskUrl="https://task.shakilxvs.com";
+    const taskUrl="https://task.shakilxvs.com/?business="+encodeURIComponent(String(businessId));
     const message=[
+      "*TASKXVS WORKSPACE*",
       "🏢 *"+String(business.name).trim()+"*",
-      "",
+      "━━━━━━━━━━━━━━━━",
       eventInfo.emoji+" *"+eventInfo.label+"*",
       "",
-      "📝 *Task:* "+title,
+      "📝 *"+title+"*",
       description?"📄 *Description:*\n"+description:null,
       "",
+      "━━━━━━━━━━━━━━━━",
       statusInfo.emoji+" *Status:* "+statusInfo.label,
       priority.emoji+" *Priority:* "+priority.label,
       "📅 *Deadline:* "+deadline,
       "",
-      "🔗 "+taskUrl
+      "↗️ *Open task in TaskXVS:*\n"+taskUrl
     ].filter(line=>line!==null&&line!==undefined).join("\n");
 
     for(const recipient of unique.values()){
@@ -1222,14 +1227,14 @@ app.delete("/api/categories/:id",requireAuth,async(req,res,next)=>{
 function normalizeTask(body) {
   const v={
     business_id:String(body.business_id||""),category_id:body.category_id||null,
-    title:String(body.title||"").trim(),description:String(body.description||""),
+    title:String(body.title||"").trim(),description:sanitizeTaskDescription(body.description||""),
     notes:String(body.notes||""),status:body.status||"todo",priority:body.priority||"normal",
     created_date:body.created_date||new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Dhaka"}),
     start_date:body.start_date||null,deadline:body.deadline||null
   };
   if(!v.business_id)throw Object.assign(new Error("Choose a business."),{status:400});
   if(!v.title||v.title.length>200)throw Object.assign(new Error("Task title must be between 1 and 200 characters."),{status:400});
-  if(v.description.length>5000||v.notes.length>5000)throw Object.assign(new Error("Description and notes must be under 5,000 characters."),{status:400});
+  if(v.notes.length>5000)throw Object.assign(new Error("Private notes must be under 5,000 characters."),{status:400});
   if(!["todo","in_progress","done"].includes(v.status))throw Object.assign(new Error("Invalid task status."),{status:400});
   if(!["low","normal","high","urgent"].includes(v.priority))throw Object.assign(new Error("Invalid task priority."),{status:400});
   if(v.start_date&&v.deadline&&v.deadline<v.start_date)throw Object.assign(new Error("Deadline cannot be before the start date."),{status:400});
