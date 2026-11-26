@@ -1,6 +1,6 @@
 # Meta WhatsApp Cloud API / Coexistence Handover
 
-**Last updated:** 2026-11-25  
+**Last updated:** 2026-11-26  
 **Repository:** [shakilxvs/gfgsdf](https://github.com/shakilxvs/gfgsdf)  
 **Production app:** https://task.shakilxvs.com  
 **Current main commit reviewed:** `91703d51cfab9adcf2a1a2affc535a77d0ac0bd3`
@@ -136,7 +136,8 @@ The current production WhatsApp sender is working through **Baileys**, an unoffi
 - Worker setup notes: [whatsapp-worker/README.md](../whatsapp-worker/README.md)
 - Scheduled cron: `0 */6 * * *` (every six hours, UTC)
 - Each session runs for up to 345 minutes (5 hours 45 minutes).
-- Queue is polled every 20 minutes while the session is active.
+- Queue is polled every 5 minutes while the WhatsApp connection is active.
+- Owner deadline reminders are checked independently once per hour, not on every queue poll.
 - Manual `workflow_dispatch` remains available.
 - Concurrency group prevents overlapping worker sessions.
 - GitHub-hosted runners are used; no separate paid VPS is required for the worker schedule.
@@ -159,20 +160,22 @@ Use only:
 
 The worker's intended database access is restricted to the `whatsapp_gateway` schema. It can process the WhatsApp queue and its auth/session state. It must not be granted access to `public.tasks`, the owner reminder ledger, or unrelated application data. Do not broaden its permissions casually.
 
-The worker also reads the scheduler credential from `whatsapp_gateway.scheduler_token` to trigger the owner's reminder sweep through an authenticated internal TaskXVS endpoint. Do not reveal or rotate the credential unless deliberately planned.
+The worker reads the scheduler credential from `whatsapp_gateway.scheduler_token` for two authenticated internal TaskXVS endpoints: the hourly owner deadline-reminder sweep and WhatsApp notification-log synchronization. Do not reveal or rotate the credential unless deliberately planned.
 
-### Known worker notification-log permission mismatch
+### Notification-log status synchronization
 
-At the last live database permission check on 2026-11-25:
-- Worker can process `whatsapp_gateway.outbound_queue`: yes.
-- Worker can access the WhatsApp auth table(s): yes.
-- Worker can read `public.tasks`: no, as intended.
-- Worker can access `public.owner_reminder_email_runs`: no, as intended.
-- Worker has **no UPDATE permission** on `public.whatsapp_notification_logs`.
+The worker intentionally has **no UPDATE permission** on `public.whatsapp_notification_logs`, and it still cannot read `public.tasks` or `public.owner_reminder_email_runs`.
 
-The latest worker code attempts to update `public.whatsapp_notification_logs` after a send, but catches/logs the permission error. Therefore do **not** claim that future queue sends and notification-log rows are guaranteed to stay synchronized yet. Fix this only with a deliberate least-privilege design (for example a narrow authenticated app endpoint or a carefully scoped column-level grant), while preserving the worker's lack of task-table access.
+The delivery-status mismatch is now addressed through a durable, least-privilege flow:
+- After a queue item changes state, the worker writes a narrow pending status record to `whatsapp_gateway.notification_log_sync_queue`.
+- The worker sends that record to the authenticated TaskXVS endpoint `POST /api/internal/notifications/whatsapp-status`.
+- TaskXVS validates the existing scheduler token and a strict payload, then updates only the matching `public.whatsapp_notification_logs` row using the application database role.
+- Transient network/server failures are retried immediately, then retained in the outbox with exponential backoff up to one hour.
+- A newer update cannot be deleted by an older in-flight synchronization, and a sent notification-log row cannot be downgraded to queued/failed.
 
-There were 36 previous outbound queue records whose queue status was `sent` while the linked notification log had been `queued`. Those 36 metadata rows were corrected manually based on the queue's existing sent state; no messages were resent. The last verification showed 36 queue rows and 36 matching sent-log rows.
+Only the WhatsApp worker role received SELECT/INSERT/UPDATE/DELETE on the new outbox table in `whatsapp_gateway`. No public-schema privileges were added to the worker. The database migration was tested on a temporary Neon branch before applying to the dedicated TaskXVS project.
+
+There were 36 previous outbound queue records whose queue status was `sent` while the linked notification log had been `queued`. Those 36 metadata rows were corrected manually based on the queue's existing sent state; no messages were resent.
 
 ### Existing sender state and recipient sync issue
 
