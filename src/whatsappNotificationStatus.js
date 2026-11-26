@@ -14,7 +14,7 @@ export function normalizeWhatsAppNotificationStatus(body) {
   const notificationLogId =
     typeof idText === "number"
       ? idText
-      : (typeof idText === "string" && /^\\d+$/.test(idText) ? Number(idText) : NaN);
+      : (typeof idText === "string" && /^\d+$/.test(idText) ? Number(idText) : NaN);
 
   if (!Number.isSafeInteger(notificationLogId) || notificationLogId <= 0) {
     throw badRequest("A valid notification_log_id is required.");
