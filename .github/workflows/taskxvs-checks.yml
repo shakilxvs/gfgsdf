@@ -31,6 +31,9 @@ jobs:
       - name: Install TaskXVS dependencies
         run: npm install --no-audit --no-fund
 
+      - name: Run task ordering regression tests
+        run: npm test
+
       - name: Build TaskXVS frontend
         run: npm run build
 
