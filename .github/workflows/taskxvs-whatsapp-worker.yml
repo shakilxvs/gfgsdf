@@ -18,7 +18,7 @@ jobs:
     timeout-minutes: 358
     env:
       DATABASE_URL: ${{ secrets.TASKXVS_WHATSAPP_DATABASE_URL }}
-      WHATSAPP_WORKER_MINUTES: "350"
+      WHATSAPP_WORKER_MINUTES: "345"
     steps:
       - name: Check worker database secret
         id: config
