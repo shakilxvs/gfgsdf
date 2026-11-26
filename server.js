@@ -8,6 +8,7 @@ import { v2 as cloudinary } from "cloudinary";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { normalizeWhatsAppNotificationStatus } from "./src/whatsappNotificationStatus.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 pg.types.setTypeParser(1082, value => value);
@@ -50,6 +51,14 @@ function safeEqual(a, b) {
   const left = Buffer.from(String(a));
   const right = Buffer.from(String(b));
   return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+async function isAuthorizedTaskXvsSchedulerRequest(req) {
+  const result = await pool.query(
+    "SELECT token FROM whatsapp_gateway.scheduler_token WHERE id=true LIMIT 1"
+  );
+  const expected = result.rows[0]?.token || "";
+  const supplied = String(req.get("x-taskxvs-scheduler-token") || "");
+  return Boolean(expected && supplied && safeEqual(supplied, expected));
 }
 function getCloudinaryClient() {
   const config=cloudinary.config();
@@ -1461,12 +1470,34 @@ app.delete("/api/tasks/:id",requireAuth,async(req,res,next)=>{
   }catch(e){next(e);}
 });
 
+app.post("/api/internal/notifications/whatsapp-status",async(req,res,next)=>{
+  try{
+    if(!await isAuthorizedTaskXvsSchedulerRequest(req)){
+      return res.status(401).json({error:"Scheduler authorization failed."});
+    }
+
+    const update=normalizeWhatsAppNotificationStatus(req.body||{});
+    const result=await pool.query(
+      `UPDATE public.whatsapp_notification_logs
+       SET status=CASE WHEN status='sent' THEN 'sent' ELSE $2 END,
+           wamid=CASE WHEN $2='sent' THEN COALESCE($3,wamid) ELSE wamid END,
+           sent_at=CASE WHEN $2='sent' THEN COALESCE(sent_at,now()) ELSE sent_at END,
+           error_message=CASE
+             WHEN status='sent' OR $2='sent' OR $2='queued' THEN NULL
+             ELSE $4
+           END
+       WHERE id=$1
+       RETURNING id,status`,
+      [update.notificationLogId,update.status,update.wamid,update.errorMessage]
+    );
+    if(!result.rowCount)return res.status(404).json({error:"WhatsApp notification log not found."});
+    res.set("Cache-Control","no-store").json({ok:true,status:result.rows[0].status});
+  }catch(error){next(error);}
+});
+
 app.post("/api/internal/notifications/deadlines",async(req,res,next)=>{
   try{
-    const result=await pool.query("SELECT token FROM whatsapp_gateway.scheduler_token WHERE id=true LIMIT 1");
-    const expected=result.rows[0]?.token||"";
-    const supplied=String(req.get("x-taskxvs-scheduler-token")||"");
-    if(!expected||!supplied||!safeEqual(supplied,expected)){
+    if(!await isAuthorizedTaskXvsSchedulerRequest(req)){
       return res.status(401).json({error:"Scheduler authorization failed."});
     }
     await checkOwnerDeadlineReminders();
