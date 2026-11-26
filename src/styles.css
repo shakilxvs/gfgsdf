@@ -3088,14 +3088,41 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   gap:10px;
 }
 .rich-editor-dialog-form .rich-editor-color-swatch {
-  width:52px;
-  height:43px;
-  flex:0 0 52px;
+  appearance:none;
+  -webkit-appearance:none;
+  display:block;
+  width:44px;
+  height:44px;
+  flex:0 0 44px;
   padding:4px;
-  border:1px solid #e3e7e1;
-  border-radius:10px;
-  background:#fbfcfa;
+  overflow:hidden;
+  border:1px solid #dce3dc;
+  border-radius:50%;
+  background:#fff;
+  box-shadow:0 1px 3px rgba(30,45,34,.08);
   cursor:pointer;
+  transition:border-color .16s, box-shadow .16s, transform .16s;
+}
+.rich-editor-dialog-form .rich-editor-color-swatch:hover {
+  border-color:#9eafa1;
+  box-shadow:0 2px 6px rgba(30,45,34,.12);
+  transform:translateY(-1px);
+}
+.rich-editor-dialog-form .rich-editor-color-swatch:focus-visible {
+  outline:2px solid #aab9ab;
+  outline-offset:3px;
+}
+.rich-editor-color-swatch::-webkit-color-swatch-wrapper {
+  padding:0;
+  border-radius:50%;
+}
+.rich-editor-color-swatch::-webkit-color-swatch {
+  border:0;
+  border-radius:50%;
+}
+.rich-editor-color-swatch::-moz-color-swatch {
+  border:0;
+  border-radius:50%;
 }
 .rich-editor-dialog-form .rich-editor-color-hex {
   flex:1;

@@ -39,7 +39,7 @@ const SAFE_STYLE_PROPERTIES = new Set([
   "margin-left", "padding-left", "vertical-align"
 ]);
 const COLOR_VALUE = /^(?:#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\)|[a-z]{3,24})$/i;
-const RICH_TAG_PATTERN = /<\/?(?:a|b|blockquote|br|code|del|div|em|h[1-4]|hr|i|li|mark|ol|p|pre|s|span|strong|sub|sup|table|tbody|td|tfoot|th|thead|tr|u|ul)\b/i;
+const RICH_TAG_PATTERN = /<\/?(?:a|b|blockquote|br|code|del|div|em|font|h[1-4]|hr|i|li|mark|ol|p|pre|s|span|strong|sub|sup|table|tbody|td|tfoot|th|thead|tr|u|ul)\b/i;
 
 function safeStyleValue(property, rawValue) {
   const value = String(rawValue || "").trim();
@@ -332,8 +332,7 @@ export function RichTextEditor({ value, onChange }) {
     closeDialog();
   }
 
-  function submitDialog(event) {
-    event.preventDefault();
+  function submitDialog() {
     if (dialogType === "link") {
       const result = normalizeLink(dialogValue);
       if (result.error) {
@@ -433,6 +432,12 @@ export function RichTextEditor({ value, onChange }) {
             event.preventDefault();
             event.stopPropagation();
             cancelDialog();
+            return;
+          }
+          if (event.key === "Enter" && event.target instanceof HTMLInputElement && event.target.type !== "color") {
+            event.preventDefault();
+            event.stopPropagation();
+            submitDialog();
           }
         }}
       >
@@ -443,7 +448,7 @@ export function RichTextEditor({ value, onChange }) {
           </div>
           <button type="button" className="icon-button" aria-label="Close dialog" onClick={cancelDialog}><X size={18}/></button>
         </header>
-        <form className="rich-editor-dialog-form" onSubmit={submitDialog}>
+        <div className="rich-editor-dialog-form" role="group">
           {dialogType === "link"
             ? <label className="field">
                 <span>Website or email address</span>
@@ -481,9 +486,9 @@ export function RichTextEditor({ value, onChange }) {
           {dialogError && <div className="form-error rich-editor-dialog-error" role="alert">{dialogError}</div>}
           <div className="modal-actions">
             <button type="button" className="button button-ghost" onClick={cancelDialog}>Cancel</button>
-            <button type="submit" className="button button-primary">{dialogType === "link" ? "Insert link" : "Apply color"}</button>
+            <button type="button" className="button button-primary" onClick={submitDialog}>{dialogType === "link" ? "Insert link" : "Apply color"}</button>
           </div>
-        </form>
+        </div>
       </section>
     </div>}
   </div>;
