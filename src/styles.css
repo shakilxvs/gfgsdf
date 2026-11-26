@@ -2902,11 +2902,6 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   overflow-wrap:anywhere;
   outline:none;
 }
-.rich-text-editable:empty::before {
-  content:attr(data-placeholder);
-  color:#a0aaa1;
-  pointer-events:none;
-}
 .rich-text-editable p,
 .rich-text-editable div {
   margin:0 0 8px;
