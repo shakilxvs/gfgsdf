@@ -789,8 +789,8 @@ function WorkspaceSettings({onClose,notify,emailConfigured,requestConfirmation})
       </div>}
       <div className="whatsapp-cloud-steps">
         <strong>Automatic delivery schedule</strong>
-        <p>GitHub starts the worker automatically every 6 hours, around 17 minutes past the hour (UTC). Each session runs for up to 5 hours 50 minutes and checks the message queue every 5 minutes while connected. You do not need to start it manually for normal operation.</p>
-        <p>The longer session reduces the planned gap between runs to about 10 minutes. GitHub can still delay scheduled starts, so this is not a guaranteed 24/7 connection. For an immediate restart, use the manual Run workflow option.</p>
+        <p>GitHub starts the worker automatically every 6 hours, around 17 minutes past the hour (UTC). Each session runs for up to 5 hours 45 minutes and checks the message queue every 5 minutes while connected. You do not need to start it manually for normal operation.</p>
+        <p>The planned gap between sessions is about 15 minutes, plus any GitHub scheduling delay. This is not a guaranteed 24/7 connection. For an immediate restart, use the manual Run workflow option.</p>
       </div>
       {error&&<div className="form-error">{error}</div>}
       <div className="modal-actions">
