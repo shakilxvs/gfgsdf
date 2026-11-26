@@ -2891,6 +2891,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   color:#253e2d;
 }
 .rich-text-editable {
+  font-weight:400;
+  font-style:normal;
   min-height:190px;
   max-height:48vh;
   overflow:auto;
@@ -2901,6 +2903,11 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   line-height:1.7;
   overflow-wrap:anywhere;
   outline:none;
+}
+.rich-text-editable:empty::before {
+  content:attr(data-placeholder);
+  color:#a0aaa1;
+  pointer-events:none;
 }
 .rich-text-editable p,
 .rich-text-editable div {
