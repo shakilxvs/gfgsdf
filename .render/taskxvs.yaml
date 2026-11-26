@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: taskxvs
+    runtime: node
+    repo: https://github.com/shakilxvs/gfgsdf
+    branch: taskxvs-production
+    region: singapore
+    buildCommand: npm install && npm run build
+    startCommand: node server.js
+    autoDeployTrigger: commit
