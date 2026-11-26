@@ -24,9 +24,9 @@ Never commit the connection string, expose it in Actions variables, print it in 
 
 ## Runtime behavior
 
-The workflow is automatically scheduled with cron `0 */6 * * *` (every six hours, UTC). It also retains `workflow_dispatch` for an owner-triggered manual run.
+The workflow is automatically scheduled with cron `17 */6 * * *` (every six hours at 17 minutes past the hour, UTC). Scheduling away from minute 0 helps avoid GitHub's documented top-of-hour congestion. It also retains `workflow_dispatch` for an owner-triggered manual run.
 
-Each session can run for up to 345 minutes (5 hours 45 minutes). While connected, the worker checks the Neon outbound queue every 20 minutes to reduce compute use on the Neon Free plan. GitHub may delay scheduled starts, and there can be a gap between sessions. This is **not** a guaranteed 24/7 connection.
+Each session can run for up to 350 minutes (5 hours 50 minutes). While connected, the worker checks the Neon outbound queue every 5 minutes. The longer session reduces the planned offline gap between sessions to about 10 minutes. GitHub may still delay scheduled starts, so this is **not** a guaranteed 24/7 connection. The five-minute polling interval is intentionally retained to avoid turning the free Neon compute into an always-on workload.
 
 The workflow uses the concurrency group `taskxvs-whatsapp-cloud-worker` with `cancel-in-progress: false`, so a scheduled run should not cancel an active run.
 
