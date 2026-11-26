@@ -48,15 +48,16 @@ If the phone unlinks the device or Baileys reports a connection conflict (440), 
 
 Do not start another worker run while an earlier run is active.
 
-## Known notification-log permission limitation
+## Notification-log status synchronization
 
-As checked against the live dedicated database on 2026-11-25:
-- The worker can process `whatsapp_gateway.outbound_queue` and access its WhatsApp auth state.
-- The worker cannot read `public.tasks` or `public.owner_reminder_email_runs`, as intended.
-- The worker role does **not** have UPDATE permission on `public.whatsapp_notification_logs`.
+The worker does not have write permission on `public.whatsapp_notification_logs`, and that restriction is intentional.
 
-The current worker code attempts to update the matching public notification-log row after a send, but the update is caught/logged when PostgreSQL denies permission. The queue send can still succeed; the public notification-log status may therefore remain stale for future sends until a deliberately scoped fix is implemented.
+After each outbound queue status change, the worker records a small pending update in `whatsapp_gateway.notification_log_sync_queue`. It then sends the update to the authenticated TaskXVS internal endpoint:
 
-A one-time metadata reconciliation previously corrected 36 rows where the outbound queue already showed `sent` but the notification log still showed `queued`. No messages were resent. The last verification showed 36 queue rows and 36 matching sent notification-log rows.
+`POST /api/internal/notifications/whatsapp-status`
 
-Do not solve this by granting the worker broad access to the `public` schema or task tables. Design a narrow least-privilege mechanism first.
+The TaskXVS application validates the scheduler token and the narrow payload, then updates only the specified WhatsApp notification-log row using its application database role. It cannot be used to change tasks, businesses, recipients, or message content.
+
+Pending updates survive worker restarts. Transient network/server errors are retried, then rescheduled with exponential backoff up to one hour. A newer pending status replaces an older unsent status, and a sent log cannot be downgraded by a later queued/failed update. The worker deletes the outbox row only after the TaskXVS endpoint confirms synchronization.
+
+The worker role still has no access to `public.tasks` or `public.owner_reminder_email_runs`. Do not grant it broad access to the `public` schema.
