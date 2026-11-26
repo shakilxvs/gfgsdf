@@ -51,7 +51,7 @@ test("converts rich task descriptions into readable WhatsApp formatting", () => 
 test("converts rich descriptions to plain searchable text", () => {
   assert.equal(
     taskDescriptionToPlainText('<p><strong>New</strong> theme</p><ul><li>Home page</li></ul>'),
-    "New theme\n• Home page"
+    "New theme\n\n• Home page"
   );
 });
 
