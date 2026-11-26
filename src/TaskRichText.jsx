@@ -267,12 +267,10 @@ export function RichTextEditor({ value, onChange }) {
       role="textbox"
       aria-label="Task description"
       aria-multiline="true"
-      data-placeholder="Write a clear description, add headings, lists, highlights or paste formatted content…"
       onInput={syncValue}
       onPaste={pasteFormatted}
       onKeyUp={syncValue}
       onBlur={syncValue}
     />
-    <div className="rich-text-footer">Rich formatting and formatted paste supported. No 5,000-character cap.</div>
   </div>;
 }
