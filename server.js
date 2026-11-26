@@ -1478,16 +1478,20 @@ app.post("/api/internal/notifications/whatsapp-status",async(req,res,next)=>{
 
     const update=normalizeWhatsAppNotificationStatus(req.body||{});
     const result=await pool.query(
-      `UPDATE public.whatsapp_notification_logs
-       SET status=CASE WHEN status='sent' THEN 'sent' ELSE $2 END,
-           wamid=CASE WHEN $2='sent' THEN COALESCE($3,wamid) ELSE wamid END,
-           sent_at=CASE WHEN $2='sent' THEN COALESCE(sent_at,now()) ELSE sent_at END,
+      `UPDATE public.whatsapp_notification_logs AS log
+       SET status=CASE WHEN log.status='sent' THEN 'sent' ELSE $2 END,
+           wamid=CASE WHEN $2='sent' THEN COALESCE($3,log.wamid) ELSE log.wamid END,
+           sent_at=CASE WHEN $2='sent' THEN COALESCE(log.sent_at,now()) ELSE log.sent_at END,
            error_message=CASE
-             WHEN status='sent' OR $2='sent' OR $2='queued' THEN NULL
+             WHEN log.status='sent' OR $2='sent' OR $2='queued' THEN NULL
              ELSE $4
            END
-       WHERE id=$1
-       RETURNING id,status`,
+       WHERE log.id=$1
+         AND EXISTS (
+           SELECT 1 FROM whatsapp_gateway.outbound_queue q
+           WHERE q.notification_log_id=log.id
+         )
+       RETURNING log.id,log.status`,
       [update.notificationLogId,update.status,update.wamid,update.errorMessage]
     );
     if(!result.rowCount)return res.status(404).json({error:"WhatsApp notification log not found."});
