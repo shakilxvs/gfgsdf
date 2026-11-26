@@ -14,7 +14,7 @@ import QRCode from "qrcode";
 import { postTaskXvsInternal } from "./internal-api.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
-const RUN_MINUTES = Math.max(10, Number(process.env.WHATSAPP_WORKER_MINUTES || 345));
+const RUN_MINUTES = Math.max(10, Number(process.env.WHATSAPP_WORKER_MINUTES || 350));
 const RUN_UNTIL = Date.now() + RUN_MINUTES * 60_000;
 const QUEUE_POLL_INTERVAL_MS = 5 * 60 * 1000;
 const OWNER_REMINDER_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
