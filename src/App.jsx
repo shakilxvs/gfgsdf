@@ -13,6 +13,7 @@ import {
   Settings2, ShieldCheck, Users, UserPlus, Building2, CalendarClock, CircleUserRound,
   Send, MessageCircle, UserRound, LockKeyhole, MailCheck, BellRing, Paperclip, Download
 } from "lucide-react";
+import { smartSortTasks } from "./taskOrdering.js";
 
 const ICONS = {
   "shopping-bag": ShoppingBag, percent: Percent, tag: Tag, video: Video,
@@ -1320,8 +1321,8 @@ function App() {
   const searchResults=useMemo(()=>{
     const q=search.trim().toLowerCase();
     if(!q)return [];
-    return tasks.filter(t=>(t.title+" "+t.description+" "+t.notes).toLowerCase().includes(q));
-  },[tasks,search]);
+    return smartSortTasks(tasks.filter(t=>(t.title+" "+t.description+" "+t.notes).toLowerCase().includes(q)),today);
+  },[tasks,search,today]);
   function rangeBounds() {
     if(range==="today")return [today,today];
     if(range==="7")return [today,addDays(today,7)];
@@ -1347,19 +1348,7 @@ function App() {
     if(overviewFilters.status==="completed")result=result.filter(t=>t.status==="done");
     if(overviewFilters.status==="urgent")result=result.filter(t=>isOpen(t)&&(t.priority==="urgent"||isDueSoon(t,today)));
     if(overviewFilters.priority!=="all")result=result.filter(t=>t.priority===overviewFilters.priority);
-    const order={urgent:0,high:1,normal:2,low:3};
-    result.sort((a,b)=>{
-      if(overviewFilters.sort==="newest")return (b.created_at||"").localeCompare(a.created_at||"");
-      if(overviewFilters.sort==="oldest")return (a.created_at||"").localeCompare(b.created_at||"");
-      if(overviewFilters.sort==="updated")return (b.updated_at||"").localeCompare(a.updated_at||"");
-      if(overviewFilters.sort==="deadline_latest")return (b.deadline||"0000-01-01").localeCompare(a.deadline||"0000-01-01");
-      if(overviewFilters.sort==="priority_high")return (order[a.priority]??2)-(order[b.priority]??2);
-      if(overviewFilters.sort==="priority_low")return (order[b.priority]??2)-(order[a.priority]??2);
-      if(overviewFilters.sort==="title_az")return (a.title||"").localeCompare(b.title||"");
-      if(overviewFilters.sort==="title_za")return (b.title||"").localeCompare(a.title||"");
-      return (a.deadline||"9999-12-31").localeCompare(b.deadline||"9999-12-31");
-    });
-    return result;
+    return smartSortTasks(result,today,overviewFilters.sort);
   },[overviewTasks,overviewFilters,today]);
   const urgentTasks=tasks.filter(t=>isDueSoon(t,today)|| (isOpen(t)&&t.priority==="urgent")).sort((a,b)=>(a.deadline||"9999").localeCompare(b.deadline||"9999"));
   const completedTasks=overviewTasks.filter(t=>t.status==="done");
@@ -1378,14 +1367,7 @@ function App() {
     if(filters.dueTo)result=result.filter(t=>t.deadline&&t.deadline<=filters.dueTo);
     if(filters.createdFrom)result=result.filter(t=>t.created_date>=filters.createdFrom);
     if(filters.createdTo)result=result.filter(t=>t.created_date<=filters.createdTo);
-    const order={urgent:0,high:1,normal:2,low:3};
-    result.sort((a,b)=>{
-      if(filters.sort==="newest")return (b.created_at||"").localeCompare(a.created_at||"");
-      if(filters.sort==="oldest")return (a.created_at||"").localeCompare(b.created_at||"");
-      if(filters.sort==="priority")return order[a.priority]-order[b.priority];
-      return (a.deadline||"9999").localeCompare(b.deadline||"9999");
-    });
-    return result;
+    return smartSortTasks(result,today,filters.sort);
   },[tasks,active,filters,today]);
 
   function clearFilters(){setFilters({category:"",status:"",priority:"",deadlineState:"",dueFrom:"",dueTo:"",createdFrom:"",createdTo:"",sort:"deadline"});}
