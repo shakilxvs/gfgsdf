@@ -1141,6 +1141,7 @@ function App() {
   const [toast,setToast]=useState("");
   const [confirmDialog,setConfirmDialog]=useState(null);
   const confirmResolver=useRef(null);
+  const requestedTaskHandled=useRef(false);
   const [mobileNav,setMobileNav]=useState(false);
   const today=todayDhaka();
 
@@ -1169,6 +1170,15 @@ function App() {
       setActive("overview");
     }
   },[active,businesses,authenticated,checking,loading]);
+  useEffect(()=>{
+    if(requestedTaskHandled.current||!authenticated||checking||loading)return;
+    const requestedTaskId=new URLSearchParams(window.location.search).get("task");
+    if(!requestedTaskId)return;
+    if(!tasks.length)return;
+    const requestedTask=tasks.find(item=>String(item.id)===requestedTaskId);
+    requestedTaskHandled.current=true;
+    if(requestedTask){setActive(requestedTask.business_id);setViewingTask(requestedTask);}
+  },[tasks,authenticated,checking,loading]);
   useEffect(()=>{
     const handlePopState=()=>{
       const businessId=new URLSearchParams(window.location.search).get("business")||"overview";
