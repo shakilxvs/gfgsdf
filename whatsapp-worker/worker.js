@@ -296,7 +296,7 @@ async function processPendingNotificationLogSyncs(force = false) {
              next_attempt_at=now()+($2 * interval '1 second'),
              last_error=$3,
              updated_at=now()
-         WHERE notification_log_id=$1 AND updated_at=$4`,
+         WHERE notification_log_id=$1 AND updated_at=$4::timestamptz`,
         [item.notification_log_id, backoffSeconds, errorMessage, item.row_version]
       );
       logger.warn(
