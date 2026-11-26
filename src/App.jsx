@@ -14,6 +14,7 @@ import {
   Send, MessageCircle, UserRound, LockKeyhole, MailCheck, BellRing, Paperclip, Download
 } from "lucide-react";
 import { smartSortTasks } from "./taskOrdering.js";
+import { RichTextEditor, RichTextView, taskDescriptionPlainText } from "./TaskRichText.jsx";
 
 const ICONS = {
   "shopping-bag": ShoppingBag, percent: Percent, tag: Tag, video: Video,
@@ -244,7 +245,7 @@ function TaskCard({task, category, business, today, onEdit, onDelete, onStatus, 
       {canWrite&&<div className="task-menu"><IconButton label="Edit task" onClick={onEdit}><Pencil size={15}/></IconButton><IconButton label="Delete task" onClick={onDelete}><MoreHorizontal size={17}/></IconButton></div>}
     </div>
     <div className="task-title-line" role="button" tabIndex={0} onClick={onView} onKeyDown={e=>{if(e.target===e.currentTarget&&(e.key==="Enter"||e.key===" ")){e.preventDefault();onView();}}}>{canWrite&&<button className={`complete-control ${task.status==="done"?"complete-checked":""}`} aria-label={task.status==="done"?"Reopen task":"Mark complete"} onClick={e=>{e.stopPropagation();onStatus(task.status==="done"?"todo":"done");}}>{task.status==="done"&&<Check size={13}/>}</button>}<h3>{task.title}</h3></div>
-    {task.description && <p className="task-description">{task.description}</p>}
+    {task.description && <RichTextView value={task.description} className="task-description task-rich-output"/>}
     <div className="task-badges">
       {canWrite?<select className={`status-select status-${task.status} ${overdue?"status-delayed":""}`} value={overdue?"delayed":task.status} onChange={e=>onStatus(e.target.value)} aria-label="Change task status">{overdue&&<option value="delayed" disabled>Delayed</option>}{STATUSES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select>:<span className={`task-card-status ${overdue?"status-delayed":task.status==="done"?"status-done":task.status==="in_progress"?"status-progress":"status-todo"}`}>{displayStatus(task,today)}</span>}
       {task.priority!=="normal" && <span className={`priority-chip priority-${task.priority}`}>{priorityLabel(task.priority)} priority</span>}
@@ -274,7 +275,7 @@ function TaskListRow({task,category,business,today,onEdit,onDelete,onStatus,onVi
     <span className="task-row-category" title={category?.name||"Uncategorized"} style={{"--chip-color":category?.color||"#858585"}}><Icon size={20}/></span>
     <div className="task-row-main">
       <div className="task-row-title-line"><h3>{task.title}</h3>{business&&<span className="task-row-business">{business.name}</span>}</div>
-      {task.description&&<p className="task-row-description">{task.description}</p>}
+      {task.description&&<RichTextView value={task.description} className="task-row-description task-rich-output"/>}
       {(task.attachments?.length||0)>0&&<span className="task-row-attachment-count"><Paperclip size={12}/>{task.attachments.length} {task.attachments.length===1?"attachment":"attachments"}</span>}
       {task.status==="done"&&task.completion_note&&<p className="task-row-completion-note"><strong>Completion note:</strong> {task.completion_note}</p>}
     </div>
@@ -379,7 +380,7 @@ function TaskForm({task,businesses,categories,defaultBusiness,onClose,onSave,onU
   return <Modal title={task?"Edit task":savedTaskId?"Finish task attachments":"Create a task"} subtitle="Capture the details, then get back to work." onClose={onClose} wide>
     <form className="task-form" onSubmit={submit} onPaste={handlePaste}>
       <label className="field field-full"><span>Task title <i>Required</i></span><input autoFocus maxLength={200} value={draft.title} onChange={e=>set("title",e.target.value)} placeholder="What needs to get done?" required/></label>
-      <label className="field field-full"><span>Description</span><textarea rows={3} maxLength={5000} value={draft.description} onChange={e=>set("description",e.target.value)} placeholder="Add a little context or a clear next step…"/></label>
+      <div className="field field-full task-description-field"><span>Description</span><RichTextEditor value={draft.description} onChange={value=>set("description",value)}/></div>
       <div className="form-grid">
         <label className="field"><span>Business</span><select value={draft.business_id} onChange={e=>set("business_id",e.target.value)} required>{businesses.filter(b=>!b.archived).map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
         <label className="field"><span>Category</span><select value={draft.category_id} onChange={e=>set("category_id",e.target.value)}><option value="">Uncategorized</option>{available.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
@@ -1026,7 +1027,7 @@ function TaskDetails({task,business,category,today,canWrite,onClose,onEdit,onCom
           <AttachmentPreviewBody taskId={task.id} attachment={previewAttachment}/>
         </div>
       : <div className="task-detail-content">
-          <div className="task-detail-heading"><div><h2>{task.title}</h2><p>{task.description||"No description added."}</p></div><span className={`task-detail-status ${task.status==="done"?"is-done":isOverdue(task,today)?"is-delayed":task.status==="in_progress"?"is-progress":""}`}>{status}</span></div>
+          <div className="task-detail-heading"><div className="task-detail-copy"><h2>{task.title}</h2>{task.description?<RichTextView value={task.description} className="task-detail-description rich-text-output"/>:<p className="task-detail-description">No description added.</p>}</div><span className={`task-detail-status ${task.status==="done"?"is-done":isOverdue(task,today)?"is-delayed":task.status==="in_progress"?"is-progress":""}`}>{status}</span></div>
           <div className="task-detail-grid">
             <div><span>Business</span><strong>{business?.name||"Unavailable"}</strong></div>
             <div><span>Category</span><strong>{category?.name||"Uncategorized"}</strong></div>
@@ -1140,6 +1141,7 @@ function App() {
   const [toast,setToast]=useState("");
   const [confirmDialog,setConfirmDialog]=useState(null);
   const confirmResolver=useRef(null);
+  const requestedTaskHandled=useRef(false);
   const [mobileNav,setMobileNav]=useState(false);
   const today=todayDhaka();
 
@@ -1168,6 +1170,15 @@ function App() {
       setActive("overview");
     }
   },[active,businesses,authenticated,checking,loading]);
+  useEffect(()=>{
+    if(requestedTaskHandled.current||!authenticated||checking||loading)return;
+    const requestedTaskId=new URLSearchParams(window.location.search).get("task");
+    if(!requestedTaskId)return;
+    if(!tasks.length)return;
+    const requestedTask=tasks.find(item=>String(item.id)===requestedTaskId);
+    requestedTaskHandled.current=true;
+    if(requestedTask){setActive(requestedTask.business_id);setViewingTask(requestedTask);}
+  },[tasks,authenticated,checking,loading]);
   useEffect(()=>{
     const handlePopState=()=>{
       const businessId=new URLSearchParams(window.location.search).get("business")||"overview";
@@ -1321,7 +1332,7 @@ function App() {
   const searchResults=useMemo(()=>{
     const q=search.trim().toLowerCase();
     if(!q)return [];
-    return smartSortTasks(tasks.filter(t=>(t.title+" "+t.description+" "+t.notes).toLowerCase().includes(q)),today);
+    return smartSortTasks(tasks.filter(t=>(t.title+" "+taskDescriptionPlainText(t.description)+" "+t.notes).toLowerCase().includes(q)),today);
   },[tasks,search,today]);
   function rangeBounds() {
     if(range==="today")return [today,today];
