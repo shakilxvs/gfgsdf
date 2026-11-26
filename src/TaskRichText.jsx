@@ -253,9 +253,13 @@ export function RichTextEditor({ value, onChange }) {
   function runCommand(command, argument = null) {
     const editor = editorRef.current;
     if (!editor) return;
-    editor.focus();
+
+    // Toolbar clicks take focus away from contentEditable in some browsers.
+    // Restore the exact saved range before applying the selected formatting.
+    restoreEditorSelection();
     document.execCommand(command, false, argument);
     syncValue();
+    saveEditorSelection();
   }
 
   function formatBlock(tag) {
@@ -396,7 +400,7 @@ export function RichTextEditor({ value, onChange }) {
         className="rich-text-tool"
         title={label}
         aria-label={label}
-        onMouseDown={event => event.preventDefault()}
+        onMouseDown={event => { event.preventDefault(); saveEditorSelection(); }}
         onClick={action}
       ><Icon size={15}/></button>)}
     </div>
@@ -408,6 +412,7 @@ export function RichTextEditor({ value, onChange }) {
       role="textbox"
       aria-label="Task description"
       aria-multiline="true"
+      data-placeholder="Add a description..."
       onInput={syncValue}
       onPaste={pasteFormatted}
       onKeyUp={syncValue}
