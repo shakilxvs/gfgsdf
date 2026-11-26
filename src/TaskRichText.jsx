@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   AlignCenter,
   AlignLeft,
@@ -14,7 +14,9 @@ import {
   Redo2,
   Strikethrough,
   Underline,
-  Undo2
+  Undo2,
+  Palette,
+  X
 } from "lucide-react";
 
 const ALLOWED_TAGS = new Set([
@@ -167,6 +169,10 @@ export function RichTextView({ value, className = "" }) {
 export function RichTextEditor({ value, onChange }) {
   const editorRef = useRef(null);
   const lastValueRef = useRef("");
+  const savedSelectionRef = useRef(null);
+  const [dialogType, setDialogType] = useState(null);
+  const [dialogValue, setDialogValue] = useState("");
+  const [dialogError, setDialogError] = useState("");
 
   useEffect(() => {
     const next = sanitizeTaskRichHtml(value);
@@ -176,11 +182,72 @@ export function RichTextEditor({ value, onChange }) {
     }
   }, [value]);
 
+  useEffect(() => {
+    if (dialogType) {
+      const field = document.querySelector(".rich-editor-dialog input");
+      field?.focus();
+      if (field?.select && dialogType === "link") field.select();
+    }
+  }, [dialogType]);
+
   function syncValue() {
     if (!editorRef.current) return;
     const html = sanitizeTaskRichHtml(editorRef.current.innerHTML).trim();
     lastValueRef.current = html;
     onChange(html === "<br>" ? "" : html);
+  }
+
+  function saveEditorSelection() {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection || !selection.rangeCount) {
+      savedSelectionRef.current = null;
+      return;
+    }
+    const range = selection.getRangeAt(0);
+    const anchorInside = range.commonAncestorContainer === editor || editor.contains(range.commonAncestorContainer);
+    savedSelectionRef.current = anchorInside ? range.cloneRange() : null;
+  }
+
+  function restoreEditorSelection() {
+    const editor = editorRef.current;
+    if (!editor) return null;
+    editor.focus();
+    const selection = window.getSelection();
+    if (!selection) return null;
+    selection.removeAllRanges();
+
+    const savedRange = savedSelectionRef.current;
+    const rangeIsInside = savedRange &&
+      (savedRange.commonAncestorContainer === editor || editor.contains(savedRange.commonAncestorContainer));
+
+    if (rangeIsInside) {
+      selection.addRange(savedRange);
+    } else {
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+      selection.addRange(range);
+    }
+    return selection;
+  }
+
+  function closeDialog() {
+    setDialogType(null);
+    setDialogError("");
+    setDialogValue("");
+  }
+
+  function cancelDialog() {
+    closeDialog();
+    restoreEditorSelection();
+  }
+
+  function openDialog(type) {
+    saveEditorSelection();
+    setDialogError("");
+    setDialogValue(type === "color" ? "#365b43" : "");
+    setDialogType(type);
   }
 
   function runCommand(command, argument = null) {
@@ -192,24 +259,98 @@ export function RichTextEditor({ value, onChange }) {
   }
 
   function formatBlock(tag) {
-    runCommand("formatBlock", `<${tag}>`);
+    runCommand("formatBlock", "<" + tag + ">");
   }
 
-  function addLink() {
-    const url = window.prompt("Paste a website link (https://...) or email address:");
-    if (!url) return;
-    const trimmed = url.trim();
-    if (!/^(?:https?:\/\/|mailto:|tel:)/i.test(trimmed)) {
-      window.alert("Use a link beginning with https://, http://, mailto: or tel:.");
+  function normalizeLink(value) {
+    const trimmed = String(value || "").trim();
+    if (!trimmed) return { error: "Enter a website address or email address." };
+    if (/[\s<>]/.test(trimmed)) return { error: "Enter a valid website address or email address." };
+
+    if (/^(?:https?:\/\/)/i.test(trimmed)) {
+      try {
+        const parsed = new URL(trimmed);
+        if (parsed.hostname) return { href: parsed.href };
+      } catch {}
+      return { error: "That website address does not look valid." };
+    }
+
+    if (/^(?:mailto:)/i.test(trimmed)) {
+      const email = trimmed.slice(7);
+      return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)
+        ? { href: "mailto:" + email }
+        : { error: "Enter a valid email address." };
+    }
+
+    if (/^(?:tel:)/i.test(trimmed)) {
+      const phone = trimmed.slice(4);
+      return /^[+\d().-]{5,24}$/.test(phone)
+        ? { href: "tel:" + phone }
+        : { error: "Enter a valid phone number." };
+    }
+
+    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
+      return { href: "mailto:" + trimmed };
+    }
+
+    const domainCandidate = trimmed.replace(/^www\./i, "");
+    if (/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}(?::\d+)?(?:[/?#][^\s]*)?$/i.test(domainCandidate)) {
+      try {
+        const parsed = new URL("https://" + trimmed);
+        if (parsed.hostname) return { href: parsed.href };
+      } catch {}
+    }
+
+    return { error: "Use a full website link, such as https://example.com, or a valid email address." };
+  }
+
+  function applyLink(href) {
+    const editor = editorRef.current;
+    const selection = restoreEditorSelection();
+    if (!editor || !selection || !selection.rangeCount) return;
+
+    if (selection.isCollapsed) {
+      const range = selection.getRangeAt(0);
+      const anchor = document.createElement("a");
+      anchor.href = href;
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+      anchor.textContent = href;
+      range.insertNode(anchor);
+      range.setStartAfter(anchor);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    } else {
+      document.execCommand("createLink", false, href);
+    }
+    syncValue();
+    closeDialog();
+  }
+
+  function submitDialog(event) {
+    event.preventDefault();
+    if (dialogType === "link") {
+      const result = normalizeLink(dialogValue);
+      if (result.error) {
+        setDialogError(result.error);
+        return;
+      }
+      applyLink(result.href);
       return;
     }
-    runCommand("createLink", trimmed);
-  }
 
-  function changeTextColor() {
-    const color = window.prompt("Enter a text color in HEX format:", "#365b43");
-    if (!color || !/^#[0-9a-f]{6}$/i.test(color.trim())) return;
-    runCommand("foreColor", color.trim());
+    if (dialogType === "color") {
+      const color = String(dialogValue || "").trim();
+      if (!/^#[0-9a-f]{6}$/i.test(color)) {
+        setDialogError("Choose a valid six-digit HEX color.");
+        return;
+      }
+      restoreEditorSelection();
+      document.execCommand("foreColor", false, color);
+      syncValue();
+      closeDialog();
+    }
   }
 
   function pasteFormatted(event) {
@@ -234,12 +375,12 @@ export function RichTextEditor({ value, onChange }) {
     { label: "Underline", icon: Underline, action: () => runCommand("underline") },
     { label: "Strikethrough", icon: Strikethrough, action: () => runCommand("strikeThrough") },
     { label: "Highlight", icon: Highlighter, action: () => runCommand("hiliteColor", "#fff1a8") },
-    { label: "Text color", icon: AlignCenter, action: changeTextColor },
+    { label: "Text color", icon: Palette, action: () => openDialog("color") },
     { label: "Heading", icon: Heading2, action: () => formatBlock("h2") },
     { label: "Bulleted list", icon: List, action: () => runCommand("insertUnorderedList") },
     { label: "Numbered list", icon: ListOrdered, action: () => runCommand("insertOrderedList") },
     { label: "Quote", icon: Quote, action: () => formatBlock("blockquote") },
-    { label: "Add link", icon: LinkIcon, action: addLink },
+    { label: "Add link", icon: LinkIcon, action: () => openDialog("link") },
     { label: "Align left", icon: AlignLeft, action: () => runCommand("justifyLeft") },
     { label: "Align center", icon: AlignCenter, action: () => runCommand("justifyCenter") },
     { label: "Undo", icon: Undo2, action: () => runCommand("undo") },
@@ -272,5 +413,73 @@ export function RichTextEditor({ value, onChange }) {
       onKeyUp={syncValue}
       onBlur={syncValue}
     />
+    {dialogType && <div
+      className="modal-backdrop rich-editor-dialog-backdrop"
+      onMouseDown={event => { if (event.target === event.currentTarget) cancelDialog(); }}
+    >
+      <section
+        className="modal rich-editor-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="rich-editor-dialog-title"
+        onMouseDown={event => event.stopPropagation()}
+        onKeyDown={event => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            cancelDialog();
+          }
+        }}
+      >
+        <header className="modal-header">
+          <div>
+            <h2 id="rich-editor-dialog-title">{dialogType === "link" ? "Insert link" : "Text color"}</h2>
+            <p>{dialogType === "link" ? "Add a clickable website or email link to your description." : "Choose a color for the selected text."}</p>
+          </div>
+          <button type="button" className="icon-button" aria-label="Close dialog" onClick={cancelDialog}><X size={18}/></button>
+        </header>
+        <form className="rich-editor-dialog-form" onSubmit={submitDialog}>
+          {dialogType === "link"
+            ? <label className="field">
+                <span>Website or email address</span>
+                <input
+                  type="text"
+                  value={dialogValue}
+                  onChange={event => { setDialogValue(event.target.value); setDialogError(""); }}
+                  placeholder="https://example.com"
+                  autoComplete="url"
+                  spellCheck="false"
+                  required
+                />
+              </label>
+            : <div className="field">
+                <span>Choose text color</span>
+                <div className="rich-editor-color-row">
+                  <input
+                    type="color"
+                    className="rich-editor-color-swatch"
+                    value={/^#[0-9a-f]{6}$/i.test(dialogValue) ? dialogValue : "#365b43"}
+                    onChange={event => { setDialogValue(event.target.value); setDialogError(""); }}
+                    aria-label="Choose a text color"
+                  />
+                  <input
+                    type="text"
+                    className="rich-editor-color-hex"
+                    value={dialogValue}
+                    onChange={event => { setDialogValue(event.target.value); setDialogError(""); }}
+                    aria-label="HEX color value"
+                    maxLength={7}
+                    spellCheck="false"
+                  />
+                </div>
+              </div>}
+          {dialogError && <div className="form-error rich-editor-dialog-error" role="alert">{dialogError}</div>}
+          <div className="modal-actions">
+            <button type="button" className="button button-ghost" onClick={cancelDialog}>Cancel</button>
+            <button type="submit" className="button button-primary">{dialogType === "link" ? "Insert link" : "Apply color"}</button>
+          </div>
+        </form>
+      </section>
+    </div>}
   </div>;
 }

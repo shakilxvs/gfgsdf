@@ -2860,8 +2860,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   transition:border-color .16s,box-shadow .16s;
 }
 .rich-text-editor:focus-within {
-  border-color:#95ad9a;
-  box-shadow:0 0 0 3px #dce9df;
+  border-color:#c4cbc4;
+  box-shadow:none;
 }
 .rich-text-toolbar {
   display:flex;
@@ -3054,5 +3054,57 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
     width:30px;
     height:30px;
     flex-basis:30px;
+  }
+}
+
+
+/* Branded dialogs opened from the rich-text toolbar */
+.rich-editor-dialog-backdrop {
+  z-index:90;
+}
+.rich-editor-dialog {
+  width:min(430px,100%);
+}
+.rich-editor-dialog-form {
+  display:grid;
+  gap:16px;
+}
+.rich-editor-dialog-form .field {
+  gap:8px;
+}
+.rich-editor-dialog-form .field input[type="text"] {
+  height:43px;
+}
+.rich-editor-color-row {
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+.rich-editor-dialog-form .rich-editor-color-swatch {
+  width:52px;
+  height:43px;
+  flex:0 0 52px;
+  padding:4px;
+  border:1px solid #e3e7e1;
+  border-radius:10px;
+  background:#fbfcfa;
+  cursor:pointer;
+}
+.rich-editor-dialog-form .rich-editor-color-hex {
+  flex:1;
+  min-width:0;
+  height:43px;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+.rich-editor-dialog-error {
+  margin-top:-4px;
+}
+@media (max-width:560px) {
+  .rich-editor-dialog-backdrop {
+    padding:14px;
+  }
+  .rich-editor-dialog {
+    padding:19px;
   }
 }
