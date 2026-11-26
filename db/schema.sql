@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   business_id uuid NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
   category_id uuid,
   title text NOT NULL CHECK (char_length(btrim(title)) BETWEEN 1 AND 200),
-  description text NOT NULL DEFAULT '' CHECK (char_length(description) <= 5000),
+  description text NOT NULL DEFAULT '',
   notes text NOT NULL DEFAULT '' CHECK (char_length(notes) <= 5000),
   status text NOT NULL DEFAULT 'todo' CHECK (status IN ('todo','in_progress','done')),
   priority text NOT NULL DEFAULT 'normal' CHECK (priority IN ('low','normal','high','urgent')),
