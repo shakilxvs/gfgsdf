@@ -15,6 +15,14 @@ import {
 } from "lucide-react";
 import { smartSortTasks } from "./taskOrdering.js";
 import { RichTextEditor, RichTextView, taskDescriptionPlainText } from "./TaskRichText.jsx";
+function taskDescriptionPreview(value) {
+  const plain = taskDescriptionPlainText(value).replace(/\\s+/g, " ").trim();
+  const maxLength = 240;
+  return plain.length > maxLength
+    ? plain.slice(0, maxLength).trimEnd() + "…"
+    : plain;
+}
+
 
 const ICONS = {
   "shopping-bag": ShoppingBag, percent: Percent, tag: Tag, video: Video,
@@ -245,7 +253,7 @@ function TaskCard({task, category, business, today, onEdit, onDelete, onStatus, 
       {canWrite&&<div className="task-menu"><IconButton label="Edit task" onClick={onEdit}><Pencil size={15}/></IconButton><IconButton label="Delete task" onClick={onDelete}><MoreHorizontal size={17}/></IconButton></div>}
     </div>
     <div className="task-title-line" role="button" tabIndex={0} onClick={onView} onKeyDown={e=>{if(e.target===e.currentTarget&&(e.key==="Enter"||e.key===" ")){e.preventDefault();onView();}}}>{canWrite&&<button className={`complete-control ${task.status==="done"?"complete-checked":""}`} aria-label={task.status==="done"?"Reopen task":"Mark complete"} onClick={e=>{e.stopPropagation();onStatus(task.status==="done"?"todo":"done");}}>{task.status==="done"&&<Check size={13}/>}</button>}<h3>{task.title}</h3></div>
-    {task.description && <RichTextView value={task.description} className="task-description task-rich-output"/>}
+    {task.description && <p className="task-description task-description-preview">{taskDescriptionPreview(task.description)}</p>}
     <div className="task-badges">
       {canWrite?<select className={`status-select status-${task.status} ${overdue?"status-delayed":""}`} value={overdue?"delayed":task.status} onChange={e=>onStatus(e.target.value)} aria-label="Change task status">{overdue&&<option value="delayed" disabled>Delayed</option>}{STATUSES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select>:<span className={`task-card-status ${overdue?"status-delayed":task.status==="done"?"status-done":task.status==="in_progress"?"status-progress":"status-todo"}`}>{displayStatus(task,today)}</span>}
       {task.priority!=="normal" && <span className={`priority-chip priority-${task.priority}`}>{priorityLabel(task.priority)} priority</span>}
@@ -275,7 +283,7 @@ function TaskListRow({task,category,business,today,onEdit,onDelete,onStatus,onVi
     <span className="task-row-category" title={category?.name||"Uncategorized"} style={{"--chip-color":category?.color||"#858585"}}><Icon size={20}/></span>
     <div className="task-row-main">
       <div className="task-row-title-line"><h3>{task.title}</h3>{business&&<span className="task-row-business">{business.name}</span>}</div>
-      {task.description&&<RichTextView value={task.description} className="task-row-description task-rich-output"/>}
+      {task.description&&<p className="task-row-description task-description-preview">{taskDescriptionPreview(task.description)}</p>}
       {(task.attachments?.length||0)>0&&<span className="task-row-attachment-count"><Paperclip size={12}/>{task.attachments.length} {task.attachments.length===1?"attachment":"attachments"}</span>}
       {task.status==="done"&&task.completion_note&&<p className="task-row-completion-note"><strong>Completion note:</strong> {task.completion_note}</p>}
     </div>
