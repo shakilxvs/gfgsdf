@@ -423,6 +423,13 @@ export function RichTextEditor({ value, onChange }) {
         aria-modal="true"
         aria-labelledby="rich-editor-dialog-title"
         onMouseDown={event => event.stopPropagation()}
+        onKeyDown={event => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            cancelDialog();
+          }
+        }}
       >
         <header className="modal-header">
           <div>
