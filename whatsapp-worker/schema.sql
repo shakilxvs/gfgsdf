@@ -28,6 +28,23 @@ CREATE INDEX IF NOT EXISTS whatsapp_gateway_outbound_queue_ready_idx
   ON whatsapp_gateway.outbound_queue(status, created_at)
   WHERE status IN ('queued','sending');
 
+-- Durable outbox for syncing queue results to public.whatsapp_notification_logs.
+-- The worker can write only this narrow queue; the TaskXVS app performs the public-schema update.
+CREATE TABLE IF NOT EXISTS whatsapp_gateway.notification_log_sync_queue (
+  notification_log_id BIGINT PRIMARY KEY,
+  status TEXT NOT NULL CHECK (status IN ('queued','sent','failed')),
+  wamid TEXT,
+  error_message TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS notification_log_sync_queue_due_idx
+  ON whatsapp_gateway.notification_log_sync_queue(next_attempt_at, created_at);
+
 CREATE TABLE IF NOT EXISTS whatsapp_gateway.gateway_state (
   id BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id = TRUE),
   status TEXT NOT NULL DEFAULT 'disconnected'
@@ -46,3 +63,8 @@ ON CONFLICT(id) DO NOTHING;
 GRANT USAGE ON SCHEMA whatsapp_gateway TO taskxvs_app;
 GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA whatsapp_gateway TO taskxvs_app;
 GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA whatsapp_gateway TO taskxvs_app;
+
+-- Worker may update only its own durable status-sync outbox in addition to existing gateway tables.
+GRANT USAGE ON SCHEMA whatsapp_gateway TO taskxvs_whatsapp_worker;
+GRANT SELECT,INSERT,UPDATE,DELETE
+  ON whatsapp_gateway.notification_log_sync_queue TO taskxvs_whatsapp_worker;
