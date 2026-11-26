@@ -83,8 +83,8 @@ function richHtmlToText(value, { whatsapp = false } = {}) {
 
   if (whatsapp) {
     html = html
-      .replace(/<(?:h[1-6])\b[^>]*>/gi, "\\n*")
-      .replace(/<\/(?:h[1-6])>/gi, "*\\n\\n")
+      .replace(/<(?:h[1-6])\b[^>]*>/gi, "\n*")
+      .replace(/<\/(?:h[1-6])>/gi, "*\n\n")
       .replace(/<(?:strong|b)\b[^>]*>/gi, "*")
       .replace(/<\/(?:strong|b)>/gi, "*")
       .replace(/<(?:em|i)\b[^>]*>/gi, "_")
@@ -98,12 +98,12 @@ function richHtmlToText(value, { whatsapp = false } = {}) {
   }
 
   html = html
-    .replace(/<br\s*\/?\s*>/gi, "\\n")
-    .replace(/<li\b[^>]*>/gi, whatsapp ? "\\n• " : "\\n• ")
-    .replace(/<\/li>/gi, "\\n")
-    .replace(/<blockquote\b[^>]*>/gi, "\\n> ")
-    .replace(/<\/blockquote>/gi, "\\n")
-    .replace(/<\/(?:p|div|pre|tr|ul|ol|table|thead|tbody|tfoot)>/gi, "\\n")
+    .replace(/<br\s*\/?\s*>/gi, "\n")
+    .replace(/<li\b[^>]*>/gi, whatsapp ? "\n• " : "\n• ")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<blockquote\b[^>]*>/gi, "\n> ")
+    .replace(/<\/blockquote>/gi, "\n")
+    .replace(/<\/(?:p|div|pre|tr|ul|ol|table|thead|tbody|tfoot)>/gi, "\n")
     .replace(/<(?:p|div|pre|tr|ul|ol|table|thead|tbody|tfoot)\b[^>]*>/gi, "")
     .replace(/<t[dh]\b[^>]*>/gi, " | ")
     .replace(/<\/t[dh]>/gi, "")
@@ -126,7 +126,7 @@ export function taskDescriptionToWhatsApp(value, maxLength = 700) {
   const text = richHtmlToText(value, { whatsapp: true });
   const characters = Array.from(text);
   if (characters.length <= maxLength) return text;
-  const suffix = "\\n… Open TaskXVS to read the full description.";
+  const suffix = "\n… Open TaskXVS to read the full description.";
   const keep = Math.max(0, maxLength - Array.from(suffix).length);
   return characters.slice(0, keep).join("").trimEnd() + suffix;
 }
