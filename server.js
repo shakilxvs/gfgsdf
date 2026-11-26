@@ -772,7 +772,7 @@ async function sendBusinessWhatsAppNotification(businessId,event,task) {
           day:"2-digit",month:"short",year:"numeric",timeZone:"UTC"
         })
       : "No deadline set";
-    const taskUrl="https://task.shakilxvs.com/?business="+encodeURIComponent(String(businessId));
+    const taskUrl="https://task.shakilxvs.com/?business="+encodeURIComponent(String(businessId))+(task?.id?"&task="+encodeURIComponent(String(task.id)):"");
     const message=[
       "*TASKXVS WORKSPACE*",
       "🏢 *"+String(business.name).trim()+"*",
