@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - main
+      - taskxvs-production
     paths:
       - "src/**"
       - "server.js"
