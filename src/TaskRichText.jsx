@@ -149,14 +149,14 @@ export function taskDescriptionPlainText(value) {
     if (node.nodeType === 3) return node.nodeValue || "";
     if (node.nodeType !== 1) return "";
     const tag = node.tagName.toLowerCase();
-    const before = BLOCK_TAGS.has(tag) ? "\\n" : "";
+    const before = BLOCK_TAGS.has(tag) ? "\n" : "";
     const inside = Array.from(node.childNodes).map(walk).join("");
-    const after = tag === "br" || tag === "li" || BLOCK_TAGS.has(tag) ? "\\n" : "";
+    const after = tag === "br" || tag === "li" || BLOCK_TAGS.has(tag) ? "\n" : "";
     return before + inside + after;
   };
   return Array.from(parsed.body.childNodes).map(walk).join("")
     .replace(/[ \t]+/g, " ")
-    .replace(/\\n{3,}/g, "\\n\\n")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
