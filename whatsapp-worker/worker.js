@@ -244,7 +244,7 @@ async function processPendingNotificationLogSyncs(force = false) {
   lastNotificationLogSyncAt = Date.now();
 
   const pending = await pool.query(
-    `SELECT notification_log_id,status,wamid,error_message,attempts,updated_at
+    `SELECT notification_log_id,status,wamid,error_message,attempts,updated_at::text AS row_version
      FROM whatsapp_gateway.notification_log_sync_queue
      WHERE next_attempt_at <= now()
      ORDER BY next_attempt_at,created_at
@@ -278,8 +278,8 @@ async function processPendingNotificationLogSyncs(force = false) {
 
       // Match updated_at so a newer status queued during this request is never deleted.
       await pool.query(
-        "DELETE FROM whatsapp_gateway.notification_log_sync_queue WHERE notification_log_id=$1 AND updated_at=$2",
-        [item.notification_log_id, item.updated_at]
+        "DELETE FROM whatsapp_gateway.notification_log_sync_queue WHERE notification_log_id=$1 AND updated_at=$2::timestamptz",
+        [item.notification_log_id, item.row_version]
       );
       logger.info(
         { notificationLogId: String(item.notification_log_id), status: item.status },
@@ -297,7 +297,7 @@ async function processPendingNotificationLogSyncs(force = false) {
              last_error=$3,
              updated_at=now()
          WHERE notification_log_id=$1 AND updated_at=$4`,
-        [item.notification_log_id, backoffSeconds, errorMessage, item.updated_at]
+        [item.notification_log_id, backoffSeconds, errorMessage, item.row_version]
       );
       logger.warn(
         { notificationLogId: String(item.notification_log_id), backoffSeconds, error: errorMessage },
