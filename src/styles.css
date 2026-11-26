@@ -3142,3 +3142,32 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
     padding:19px;
   }
 }
+
+
+/* Task lists always show a clean plain-text description preview.
+   Full rich formatting remains in the task details and editor. */
+.task-description-preview {
+  font-family:system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+  font-size:12px !important;
+  font-weight:400 !important;
+  font-style:normal !important;
+  line-height:1.5 !important;
+  letter-spacing:normal !important;
+  text-transform:none !important;
+  white-space:normal !important;
+  overflow-wrap:anywhere;
+}
+.task-card .task-description-preview {
+  display:-webkit-box;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:3;
+  overflow:hidden;
+  max-height:5.4em;
+}
+.task-row .task-description-preview {
+  display:-webkit-box;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+  overflow:hidden;
+  max-height:3.9em;
+}
