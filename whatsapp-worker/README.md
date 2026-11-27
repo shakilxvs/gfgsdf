@@ -24,15 +24,15 @@ Never commit the connection string, expose it in Actions variables, print it in 
 
 ## Runtime behavior
 
-The workflow is automatically scheduled with cron `17 * * * *` (every hour at 17 minutes past the hour, UTC). Scheduling away from minute 0 helps avoid GitHub's documented top-of-hour congestion. It also retains `workflow_dispatch` for an owner-triggered manual run.
+The worker uses a self-renewing GitHub Actions handoff. Each worker session runs for up to 345 minutes (5 hours 45 minutes), and about 5 minutes before it exits, it uses its scoped GitHub Actions token to queue the next `workflow_dispatch` run on `main`. The worker then exits normally, and GitHub starts the queued replacement when the active run releases the concurrency lock.
 
-Each session can run for up to 345 minutes (5 hours 45 minutes). While connected, the worker checks the Neon outbound queue every 5 minutes. The hourly trigger intentionally runs more often than the worker session length: the workflow concurrency group allows one active sender session and one pending replacement. Each new hourly trigger replaces the older pending run, so the latest handoff remains queued while the active session is running. When the current session ends, the pending run can start without waiting for the next six-hour window.
+The worker checks the Neon outbound queue every 5 minutes while connected. This intentionally keeps Neon Free able to scale to zero between checks instead of holding a database connection open continuously.
 
-GitHub can still delay or drop scheduled triggers under high load, so this improves handoff reliability but is **not** a guaranteed 24/7 connection. The five-minute polling interval is intentionally retained to avoid turning the free Neon compute into an always-on workload.
+A separate lightweight watchdog runs every 10 minutes. It checks the recent worker run history and dispatches a replacement only when no healthy active or pending worker exists. It recovers failed runs with a short backoff and refreshes stale queued runs. A short successful exit is treated as a possible WhatsApp logout/session conflict and is not automatically restarted, to avoid a QR/reconnect loop.
 
-The workflow uses the concurrency group `taskxvs-whatsapp-cloud-worker` with `cancel-in-progress: false`; do not remove it or allow parallel sender sessions.
+The worker concurrency group is `taskxvs-whatsapp-cloud-worker` with `cancel-in-progress: false`. It must remain enabled so only one Baileys sender session runs at a time. Do not create a second worker service or run a second manual session while the automatic worker is active.
 
-The worker also reads a single scheduler credential from `whatsapp_gateway.scheduler_token` and calls the authenticated TaskXVS internal deadline-reminder endpoint. It does not read task records or the owner reminder ledger. Do not expose or copy the scheduler credential.
+GitHub Actions scheduling, runner availability and queued starts remain best-effort, so a short handoff gap is possible. This improves normal handoffs and automatic recovery but is **not** a guaranteed 24/7 connection.
 
 ## Current WhatsApp provider
 
