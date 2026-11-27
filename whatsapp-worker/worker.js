@@ -507,7 +507,7 @@ async function main() {
     throw error;
   } finally {
     if (!loggedOut) {
-      await updateGateway("disconnected", { last_error: "The free cloud worker session ended. It will reconnect on the next scheduled run." }).catch(() => {});
+      await updateGateway("disconnected", { last_error: "The worker session ended. Its automatic handoff is queued, and the watchdog will recover it if needed." }).catch(() => {});
     }
     await pool.end();
   }
