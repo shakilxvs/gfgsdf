@@ -1,0 +1,34 @@
+name: TaskXVS WhatsApp Worker Watchdog
+
+on:
+  schedule:
+    - cron: "4,14,24,34,44,54 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: taskxvs-whatsapp-worker-watchdog
+  cancel-in-progress: true
+
+jobs:
+  ensure-worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Check out TaskXVS
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Check and recover WhatsApp worker
+        working-directory: whatsapp-worker
+        run: node watchdog.js
