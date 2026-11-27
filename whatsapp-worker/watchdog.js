@@ -17,7 +17,8 @@ const response = await fetch(endpoint, {
     Accept: "application/vnd.github+json",
     Authorization: `Bearer ${token}`,
     "X-GitHub-Api-Version": "2022-11-28"
-  }
+  },
+  signal: AbortSignal.timeout(15000)
 });
 
 if (!response.ok) {
