@@ -3171,3 +3171,41 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   overflow:hidden;
   max-height:3.9em;
 }
+
+
+.deadline-view.deadline-view-completed {
+  background:#edf4ee;
+  border:1px solid #deeadf;
+}
+.deadline-view.deadline-view-completed .deadline-icon {
+  color:#4f7958;
+  background:#e0ede2;
+}
+.deadline-view.deadline-view-completed .deadline-copy strong {
+  color:#4f7958;
+}
+.settings-team-access-card {
+  display:grid;
+  grid-template-columns:40px minmax(0,1fr) auto;
+  align-items:center;
+  gap:12px;
+  padding:13px 14px;
+  border:1px solid #e5e5e0;
+  border-radius:14px;
+  background:#fff;
+}
+.settings-team-access-card .button {
+  white-space:nowrap;
+}
+.settings-team-access-card .button svg {
+  margin-left:3px;
+}
+@media (max-width:560px) {
+  .settings-team-access-card {
+    grid-template-columns:38px minmax(0,1fr);
+  }
+  .settings-team-access-card .button {
+    grid-column:2;
+    justify-self:start;
+  }
+}

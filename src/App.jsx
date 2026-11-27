@@ -257,14 +257,18 @@ function TaskCard({task, category, business, today, onEdit, onDelete, onStatus, 
     <div className="task-badges">
       {canWrite?<select className={`status-select status-${task.status} ${overdue?"status-delayed":""}`} value={overdue?"delayed":task.status} onChange={e=>onStatus(e.target.value)} aria-label="Change task status">{overdue&&<option value="delayed" disabled>Delayed</option>}{STATUSES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select>:<span className={`task-card-status ${overdue?"status-delayed":task.status==="done"?"status-done":task.status==="in_progress"?"status-progress":"status-todo"}`}>{displayStatus(task,today)}</span>}
       {task.priority!=="normal" && <span className={`priority-chip priority-${task.priority}`}>{priorityLabel(task.priority)} priority</span>}
-      {task.deadline && <DeadlineView value={task.deadline} today={today}/>}
+      {task.status==="done"?<DeadlineView completed/>:task.deadline&&<DeadlineView value={task.deadline} today={today}/>}
     </div>
     {task.status==="done"&&task.completion_note&&<p className="task-completion-note"><strong>Completion note</strong> {task.completion_note}</p>}
     <div className="task-card-foot"><span><CalendarDays size={13}/>Created {formatDate(task.created_date)}</span>{task.deadline && <span>Due {formatDate(task.deadline,true)}</span>}{(task.attachments?.length||0)>0&&<span className="task-attachment-count"><Paperclip size={13}/>{task.attachments.length} {task.attachments.length===1?"attachment":"attachments"}</span>}</div>
   </article>;
 }
 
-function DeadlineView({value,today}) {
+function DeadlineView({value,today,completed=false}) {
+  if(completed)return <div className="deadline-view deadline-view-completed">
+    <span className="deadline-icon"><Check size={15}/></span>
+    <span className="deadline-copy"><strong>Completed</strong></span>
+  </div>;
   if(!value)return <div className="deadline-view deadline-view-empty">
     <span className="deadline-icon"><CalendarDays size={15}/></span>
     <span className="deadline-copy"><strong>No deadline</strong></span>
@@ -287,7 +291,7 @@ function TaskListRow({task,category,business,today,onEdit,onDelete,onStatus,onVi
       {(task.attachments?.length||0)>0&&<span className="task-row-attachment-count"><Paperclip size={12}/>{task.attachments.length} {task.attachments.length===1?"attachment":"attachments"}</span>}
       {task.status==="done"&&task.completion_note&&<p className="task-row-completion-note"><strong>Completion note:</strong> {task.completion_note}</p>}
     </div>
-    <div className="task-row-deadline"><span className="deadline-label">DEADLINE</span><DeadlineView value={task.deadline} today={today}/></div>
+    <div className="task-row-deadline">{task.status==="done"?<DeadlineView completed/>:<><span className="deadline-label">DEADLINE</span><DeadlineView value={task.deadline} today={today}/></>}</div>
     {canWrite?<div className="task-row-actions" onClick={e=>e.stopPropagation()}>
       <select className={delayed?"task-status-select status-delayed":""} value={delayed?"delayed":task.status} onChange={e=>onStatus(e.target.value)} onClick={e=>e.stopPropagation()} aria-label="Change task status">
         {delayed&&<option value="delayed" disabled>Delayed</option>}
@@ -561,7 +565,7 @@ function UserManager({users,businesses,onClose,onSave,onDelete,onToggle}) {
   </Modal>;
 }
 
-function WorkspaceSettings({onClose,notify,emailConfigured,requestConfirmation}) {
+function WorkspaceSettings({onClose,notify,emailConfigured,requestConfirmation,onOpenTeamAccess}) {
   const [status,setStatus]=useState({status:"disconnected",connected:false,qr_data_url:""});
   const [loading,setLoading]=useState(true);
   const [busy,setBusy]=useState(false);
@@ -775,6 +779,14 @@ function WorkspaceSettings({onClose,notify,emailConfigured,requestConfirmation})
       </div>
       <div className="settings-section-heading settings-section-heading-spaced"><strong>Connections</strong><span>Workspace integrations are visible to the owner only.</span></div>
       <div className="settings-integration-card"><span className="settings-integration-icon"><Mail size={19}/></span><div className="settings-integration-copy"><strong>Email notifications</strong><span>Task updates and business notification emails through Resend.</span></div><span className={emailConfigured?"settings-connection-state is-connected":"settings-connection-state"}>{emailConfigured?"Configured":"Not configured"}</span></div>
+      <div className="settings-team-access-card">
+        <span className="settings-integration-icon"><Users size={19}/></span>
+        <div className="settings-integration-copy">
+          <strong>Team access</strong>
+          <span>Manage team accounts, business permissions and member access.</span>
+        </div>
+        <Button type="button" variant="secondary" onClick={onOpenTeamAccess}>Manage team <ChevronRight size={14}/></Button>
+      </div>
       <div className="settings-section-heading settings-section-heading-spaced"><strong>WhatsApp notifications</strong><span>Dedicated sender and cloud connection status.</span></div>
       <div className="whatsapp-cloud-settings">
       <div className={connected?"whatsapp-cloud-card connected":"whatsapp-cloud-card pending"}>
@@ -1441,7 +1453,6 @@ function App() {
       {canCreateBusiness&&<button className="sidebar-add-business" title="Add business" onClick={()=>setModal("businesses")}><Plus size={15}/><span>Add business</span></button>}
       <div className="sidebar-bottom">
         {isOwner&&<button className="sidebar-link sidebar-admin-link" title="Settings" onClick={()=>setSettingsOpen(true)}><Settings2 size={17}/><span>Settings</span></button>}
-        {isOwner&&<button className="sidebar-link sidebar-admin-link" title="Team access" onClick={()=>setModal("users")}><Users size={17}/><span>Team access</span></button>}
         <button type="button" className="owner-row owner-row-button" onClick={openAccount} title="My account"><div className="owner-avatar">{(sessionUser?.displayName||"X").slice(0,1).toUpperCase()}</div><div><strong>{sessionUser?.displayName||"User"}</strong><small>{isOwner?"Workspace owner":"Team member"}</small></div></button>
         <button className="sidebar-link logout-link" title="Sign out" onClick={logout}><LogOut size={16}/><span>Sign out</span></button>
       </div>
@@ -1541,11 +1552,11 @@ function App() {
     {modal==="task"&&<TaskForm task={editingTask} businesses={writableBusinesses} categories={categories} defaultBusiness={active==="overview"?writableBusinesses[0]?.id:active} onClose={()=>setModal(null)} onSave={values=>editingTask?updateTask(editingTask,values):addTask(values)} onUpdate={updateTask} onAttachmentUpdate={updateTaskAttachmentState} requestConfirmation={requestConfirmation}/>}
     {modal==="categories"&&selectedBusiness&&activeCanWrite&&<CategoryManager business={selectedBusiness} categories={categories} onClose={()=>setModal(null)} onAdd={addCategory} onEdit={editCategory} onDelete={deleteCategory}/>}
     {modal==="businesses"&&canCreateBusiness&&<BusinessManager businesses={businesses} emailConfigured={emailConfigured} isOwner={isOwner} currentUserId={sessionUser?.id} onClose={()=>setModal(null)} onAdd={addBusiness} onRename={renameBusiness} onArchive={archiveBusiness} onDelete={deleteBusiness}/>}
-    {modal==="users"&&isOwner&&<UserManager users={users} businesses={businesses} onClose={()=>setModal(null)} onSave={saveUser} onDelete={deleteUser} onToggle={toggleUser}/>}
+    {modal==="users"&&isOwner&&<UserManager users={users} businesses={businesses} onClose={()=>{setModal(null);setSettingsOpen(true);}} onSave={saveUser} onDelete={deleteUser} onToggle={toggleUser}/>}
     {viewingTask&&<TaskDetails task={tasks.find(t=>t.id===viewingTask.id)||viewingTask} business={businesses.find(b=>b.id===viewingTask.business_id)} category={categories.find(c=>c.id===viewingTask.category_id)} today={today} canWrite={canWriteBusiness(viewingTask.business_id)} onClose={()=>setViewingTask(null)} onEdit={()=>{setEditingTask(tasks.find(t=>t.id===viewingTask.id)||viewingTask);setViewingTask(null);setModal("task");}} onComplete={()=>requestStatusChange(tasks.find(t=>t.id===viewingTask.id)||viewingTask,"done")}/>}
     {completingTask&&<CompleteTaskDialog task={completingTask} status={requestedStatus} note={completionNote} setNote={setCompletionNote} onCancel={()=>{setCompletingTask(null);setCompletionNote("");}} onConfirm={confirmCompletion} busy={completionBusy}/>}
     {activityOpen&&isOwner&&<ActivityFeed items={activityItems} onClose={()=>setActivityOpen(false)}/>}
-    {settingsOpen&&isOwner&&<WorkspaceSettings onClose={()=>setSettingsOpen(false)} notify={notify} emailConfigured={emailConfigured} requestConfirmation={requestConfirmation}/>}
+    {settingsOpen&&isOwner&&<WorkspaceSettings onClose={()=>setSettingsOpen(false)} notify={notify} emailConfigured={emailConfigured} requestConfirmation={requestConfirmation} onOpenTeamAccess={()=>{setSettingsOpen(false);setModal("users");}}/>}
     {accountOpen&&<AccountSettings account={accountDetails||sessionUser} onClose={()=>setAccountOpen(false)} onSave={saveAccount}/>}
     {confirmDialog&&<ConfirmDialog config={confirmDialog} onCancel={()=>settleConfirmation(false)} onConfirm={()=>settleConfirmation(true)}/>}
     {toast&&<div className="toast-message"><Check size={15}/>{toast}</div>}

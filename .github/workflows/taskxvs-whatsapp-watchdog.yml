@@ -1,6 +1,14 @@
 name: TaskXVS WhatsApp Worker Watchdog
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/taskxvs-whatsapp-watchdog.yml"
+      - ".github/workflows/taskxvs-whatsapp-worker.yml"
+      - "whatsapp-worker/handoff.js"
+      - "whatsapp-worker/watchdog.js"
   schedule:
     - cron: "4,14,24,34,44,54 * * * *"
   workflow_dispatch:
