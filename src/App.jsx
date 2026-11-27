@@ -1453,7 +1453,6 @@ function App() {
       {canCreateBusiness&&<button className="sidebar-add-business" title="Add business" onClick={()=>setModal("businesses")}><Plus size={15}/><span>Add business</span></button>}
       <div className="sidebar-bottom">
         {isOwner&&<button className="sidebar-link sidebar-admin-link" title="Settings" onClick={()=>setSettingsOpen(true)}><Settings2 size={17}/><span>Settings</span></button>}
-        {isOwner&&}
         <button type="button" className="owner-row owner-row-button" onClick={openAccount} title="My account"><div className="owner-avatar">{(sessionUser?.displayName||"X").slice(0,1).toUpperCase()}</div><div><strong>{sessionUser?.displayName||"User"}</strong><small>{isOwner?"Workspace owner":"Team member"}</small></div></button>
         <button className="sidebar-link logout-link" title="Sign out" onClick={logout}><LogOut size={16}/><span>Sign out</span></button>
       </div>
