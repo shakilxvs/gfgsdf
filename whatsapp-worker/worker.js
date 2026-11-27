@@ -12,10 +12,12 @@ const { Pool } = pg;
 import pino from "pino";
 import QRCode from "qrcode";
 import { postTaskXvsInternal } from "./internal-api.js";
+import { dispatchWorkerSuccessor } from "./handoff.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const RUN_MINUTES = Math.max(10, Number(process.env.WHATSAPP_WORKER_MINUTES || 345));
 const RUN_UNTIL = Date.now() + RUN_MINUTES * 60_000;
+const HANDOFF_BUFFER_MS = Math.max(60_000, Number(process.env.WHATSAPP_WORKER_HANDOFF_BUFFER_MINUTES || 5) * 60_000);
 const QUEUE_POLL_INTERVAL_MS = 5 * 60 * 1000;
 const OWNER_REMINDER_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 const NOTIFICATION_LOG_SYNC_POLL_INTERVAL_MS = 30 * 1000;
@@ -25,6 +27,21 @@ const logger = pino({ level: process.env.LOG_LEVEL || "info" });
 
 if (!DATABASE_URL) {
   throw new Error("DATABASE_URL is required. Set GitHub Actions secret TASKXVS_WHATSAPP_DATABASE_URL.");
+}
+
+let successorHandoffPromise = null;
+
+function queueSuccessorWorker() {
+  if (successorHandoffPromise) return successorHandoffPromise;
+  successorHandoffPromise = dispatchWorkerSuccessor({
+    token: process.env.GITHUB_TOKEN,
+    repository: process.env.GITHUB_REPOSITORY,
+    ref: "main"
+  }).catch(error => {
+    successorHandoffPromise = null;
+    throw error;
+  });
+  return successorHandoffPromise;
 }
 
 const pool = new Pool({
@@ -429,24 +446,39 @@ async function runSocketSession() {
     }
   });
 
-  while (Date.now() < RUN_UNTIL && !closed) {
-    await triggerOwnerDeadlineReminderSweep();
-    const hadPendingLogSyncs = await processPendingNotificationLogSyncs();
-    if (connected) {
-      const hadMessages = await processQueue(socket, () => connected && !closed);
-      await pool.query(
-        "UPDATE whatsapp_gateway.gateway_state SET last_seen_at=now(),updated_at=now() WHERE id=true AND status='connected'"
-      );
-      if (!hadMessages && connected && !closed) {
-        // Retry a pending status sync sooner, while keeping empty queue polling at five minutes.
-        await sleep(hadPendingLogSyncs ? NOTIFICATION_LOG_SYNC_POLL_INTERVAL_MS : QUEUE_POLL_INTERVAL_MS);
-      }
-    } else {
-      await sleep(1800);
+  // Queue the replacement before this session exits. The workflow concurrency
+  // group keeps it pending until this worker releases the sender session.
+  const handoffTimer = setTimeout(() => {
+    if (loggedOut) {
+      logger.warn("WhatsApp is logged out; skipping automatic worker handoff until it is relinked.");
+      return;
     }
-  }
+    queueSuccessorWorker()
+      .then(() => logger.info("The next WhatsApp worker session has been queued automatically."))
+      .catch(error => logger.error({ error: error.message }, "Automatic WhatsApp worker handoff failed; the watchdog will recover it."));
+  }, Math.max(0, RUN_UNTIL - Date.now() - HANDOFF_BUFFER_MS));
 
-  try { socket.end(new Error("Scheduled GitHub Actions worker session ended.")); } catch {}
+  try {
+    while (Date.now() < RUN_UNTIL && !closed) {
+      await triggerOwnerDeadlineReminderSweep();
+      const hadPendingLogSyncs = await processPendingNotificationLogSyncs();
+      if (connected) {
+        const hadMessages = await processQueue(socket, () => connected && !closed);
+        await pool.query(
+          "UPDATE whatsapp_gateway.gateway_state SET last_seen_at=now(),updated_at=now() WHERE id=true AND status='connected'"
+        );
+        if (!hadMessages && connected && !closed) {
+          // Retry a pending status sync sooner, while keeping empty queue polling at five minutes.
+          await sleep(hadPendingLogSyncs ? NOTIFICATION_LOG_SYNC_POLL_INTERVAL_MS : QUEUE_POLL_INTERVAL_MS);
+        }
+      } else {
+        await sleep(1800);
+      }
+    }
+  } finally {
+    clearTimeout(handoffTimer);
+    try { socket.end(new Error("Scheduled GitHub Actions worker session ended.")); } catch {}
+  }
   return { loggedOut, closed };
 }
 
