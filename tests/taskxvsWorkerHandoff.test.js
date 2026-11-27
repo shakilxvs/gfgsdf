@@ -52,9 +52,17 @@ test("leaves a healthy active worker alone", () => {
   assert.equal(decision.shouldDispatch, false);
 });
 
-test("queues a handoff when an active worker is near its session limit", () => {
+test("does not race the worker's own five-minute pre-exit handoff", () => {
   const decision = evaluateWorkerRuns([
     run({ status: "in_progress", conclusion: null, startedMinutesAgo: 340 })
+  ], { now: NOW });
+
+  assert.equal(decision.shouldDispatch, false);
+});
+
+test("queues a watchdog handoff when an active worker has no successor near its limit", () => {
+  const decision = evaluateWorkerRuns([
+    run({ status: "in_progress", conclusion: null, startedMinutesAgo: 343 })
   ], { now: NOW });
 
   assert.equal(decision.shouldDispatch, true);
