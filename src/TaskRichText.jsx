@@ -39,7 +39,7 @@ const SAFE_STYLE_PROPERTIES = new Set([
   "margin-left", "padding-left", "vertical-align"
 ]);
 const COLOR_VALUE = /^(?:#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\)|[a-z]{3,24})$/i;
-const RICH_TAG_PATTERN = /<\/?(?:a|b|blockquote|br|code|del|div|em|font|h[1-4]|hr|i|li|mark|ol|p|pre|s|span|strong|sub|sup|table|tbody|td|tfoot|th|thead|tr|u|ul)\b/i;
+const RICH_TAG_PATTERN = /(?:<\/?(?:a|b|blockquote|br|code|del|div|em|font|h[1-4]|hr|i|li|mark|ol|p|pre|s|span|strong|sub|sup|table|tbody|td|tfoot|th|thead|tr|u|ul)\b|&(?:amp|nbsp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);)/i;
 
 function safeStyleValue(property, rawValue) {
   const value = String(rawValue || "").trim();
@@ -138,7 +138,8 @@ export function sanitizeTaskRichHtml(value) {
   }
 
   Array.from(parsed.body.childNodes).forEach(node => copyNode(node, output));
-  return output.innerHTML.trim();
+  // Keep whitespace intact. ContentEditable serializes repeated/trailing spaces as entities such as &nbsp;.
+  return output.innerHTML;
 }
 
 export function taskDescriptionPlainText(value) {
@@ -192,7 +193,10 @@ export function RichTextEditor({ value, onChange }) {
 
   function syncValue() {
     if (!editorRef.current) return;
-    const html = sanitizeTaskRichHtml(editorRef.current.innerHTML).trim();
+    // innerHTML may contain entity-only text (for example &nbsp; after Space).
+    // The sanitizer parses those entities instead of escaping them as literal text.
+    // Do not trim: leading/trailing spaces are valid description content.
+    const html = sanitizeTaskRichHtml(editorRef.current.innerHTML);
     lastValueRef.current = html;
     onChange(html === "<br>" ? "" : html);
   }
