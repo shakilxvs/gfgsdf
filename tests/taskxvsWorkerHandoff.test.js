@@ -138,3 +138,31 @@ test("reports rejected GitHub workflow dispatch requests", async () => {
     /dispatch failed \(403\)/
   );
 });
+
+test("does not restart a successful full session until the handoff grace period passes", () => {
+  const decision = evaluateWorkerRuns([
+    run({ conclusion: "success", startedMinutesAgo: 345, finishedMinutesAgo: 1 })
+  ], { now: NOW });
+
+  assert.equal(decision.shouldDispatch, false);
+});
+
+test("backs off repeated failures up to the configured maximum", () => {
+  const failedRuns = [
+    run({ id: "3", conclusion: "failure", startedMinutesAgo: 1, finishedMinutesAgo: 1, createdMinutesAgo: 1 }),
+    run({ id: "2", conclusion: "failure", startedMinutesAgo: 8, finishedMinutesAgo: 8, createdMinutesAgo: 8 }),
+    run({ id: "1", conclusion: "failure", startedMinutesAgo: 18, finishedMinutesAgo: 18, createdMinutesAgo: 18 })
+  ];
+  const decision = evaluateWorkerRuns(failedRuns, { now: NOW });
+
+  assert.equal(decision.shouldDispatch, false);
+  assert.match(decision.reason, /waiting/);
+});
+
+test("retries a failed worker once the recovery delay passes", () => {
+  const decision = evaluateWorkerRuns([
+    run({ conclusion: "failure", startedMinutesAgo: 7, finishedMinutesAgo: 7 })
+  ], { now: NOW });
+
+  assert.equal(decision.shouldDispatch, true);
+});
