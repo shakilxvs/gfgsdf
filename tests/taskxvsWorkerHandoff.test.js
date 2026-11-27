@@ -7,7 +7,6 @@ import {
 } from "../whatsapp-worker/handoff.js";
 
 const MINUTE = 60 * 1000;
-const HOUR = 60 * MINUTE;
 const NOW = Date.parse("2026-11-27T18:00:00Z");
 
 function run({
