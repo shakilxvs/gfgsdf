@@ -112,7 +112,8 @@ export async function dispatchWorkerSuccessor({
       "Content-Type": "application/json",
       "X-GitHub-Api-Version": "2022-11-28"
     },
-    body: JSON.stringify({ ref })
+    body: JSON.stringify({ ref }),
+    signal: AbortSignal.timeout(15000)
   });
 
   if (!response.ok) {
