@@ -798,8 +798,8 @@ function WorkspaceSettings({onClose,notify,emailConfigured,requestConfirmation})
       </div>}
       <div className="whatsapp-cloud-steps">
         <strong>Automatic delivery schedule</strong>
-        <p>GitHub checks for a worker handoff every hour, at 17 minutes past the hour (UTC). Each session runs for up to 5 hours 45 minutes and checks the message queue every 5 minutes while connected. The hourly trigger keeps the latest replacement queued while a session is active, and the concurrency lock prevents two WhatsApp sessions from running together. You do not need to start it manually for normal operation.</p>
-        <p>When a session ends, the queued replacement should start automatically rather than waiting for another six-hour window. GitHub can still delay or drop scheduled triggers, so brief gaps remain possible. This is not a guaranteed 24/7 connection. For an immediate restart, use the manual Run workflow option.</p>
+        <p>Each worker session runs for up to 5 hours 45 minutes and checks the message queue every 5 minutes while connected. About 5 minutes before a session ends, it automatically queues its replacement. A separate watchdog checks every 10 minutes and recovers failed or missed handoffs. The concurrency lock ensures only one WhatsApp session runs at a time. No manual restart is needed during normal operation.</p>
+        <p>GitHub may still delay runner starts, so a short handoff gap is possible. If WhatsApp logs the sender out or invalidates the linked device, automatic retries pause to avoid a reconnect loop and the sender must be relinked. This is not a guaranteed 24/7 connection.</p>
       </div>
       {error&&<div className="form-error">{error}</div>}
       <div className="modal-actions">

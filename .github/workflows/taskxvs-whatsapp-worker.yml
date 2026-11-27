@@ -2,15 +2,14 @@ name: TaskXVS Free WhatsApp Cloud Worker
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "17 * * * *" # Hourly handoff trigger; keep the latest replacement queued away from minute 0.
+
+permissions:
+  actions: write
+  contents: read
 
 concurrency:
   group: taskxvs-whatsapp-cloud-worker
   cancel-in-progress: false
-
-permissions:
-  contents: read
 
 jobs:
   whatsapp-worker:
@@ -19,6 +18,8 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.TASKXVS_WHATSAPP_DATABASE_URL }}
       WHATSAPP_WORKER_MINUTES: "345"
+      GITHUB_TOKEN: ${{ github.token }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
     steps:
       - name: Check worker database secret
         id: config
@@ -46,7 +47,7 @@ jobs:
         if: steps.config.outputs.configured == 'true'
         run: npm install --prefix whatsapp-worker --no-audit --no-fund
 
-      - name: Run WhatsApp worker session
+      - name: Run self-renewing WhatsApp worker session
         if: steps.config.outputs.configured == 'true'
         working-directory: whatsapp-worker
         run: node worker.js

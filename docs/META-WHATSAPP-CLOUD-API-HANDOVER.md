@@ -134,14 +134,16 @@ The current production WhatsApp sender is working through **Baileys**, an unoffi
 - Workflow: [TaskXVS Free WhatsApp Cloud Worker](../.github/workflows/taskxvs-whatsapp-worker.yml)
 - Worker code: [whatsapp-worker/worker.js](../whatsapp-worker/worker.js)
 - Worker setup notes: [whatsapp-worker/README.md](../whatsapp-worker/README.md)
-- Scheduled cron: `0 */6 * * *` (every six hours, UTC)
+- The worker is started with `workflow_dispatch`; it no longer depends on a six-hour or hourly worker cron.
 - Each session runs for up to 345 minutes (5 hours 45 minutes).
+- About 5 minutes before it exits, the worker uses its scoped `GITHUB_TOKEN` to queue the next `workflow_dispatch` run on `main`.
+- A separate watchdog runs every 10 minutes and recovers failed, missing, or stale worker handoffs.
 - Queue is polled every 5 minutes while the WhatsApp connection is active.
 - Owner deadline reminders are checked independently once per hour, not on every queue poll.
-- Manual `workflow_dispatch` remains available.
-- Concurrency group prevents overlapping worker sessions.
+- The `taskxvs-whatsapp-cloud-worker` concurrency group prevents overlapping sender sessions.
+- The short-lived `GITHUB_TOKEN` is granted only `actions: write` and `contents: read`; no personal access token is required.
 - GitHub-hosted runners are used; no separate paid VPS is required for the worker schedule.
-- This is not guaranteed 24/7 delivery; scheduled starts can be delayed and there can be session gaps.
+- This improves handoff reliability but is not guaranteed 24/7 delivery. GitHub runner starts can still be delayed. A short successful worker exit caused by WhatsApp logout/session conflict intentionally pauses automatic retries until the sender is relinked.
 
 Required repository Actions secret name:
 - `TASKXVS_WHATSAPP_DATABASE_URL`

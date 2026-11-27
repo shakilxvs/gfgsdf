@@ -44,7 +44,10 @@ jobs:
         run: npm install --prefix whatsapp-worker --no-audit --no-fund
 
       - name: Check WhatsApp worker syntax
-        run: node --check whatsapp-worker/worker.js
+        run: |
+          node --check whatsapp-worker/worker.js
+          node --check whatsapp-worker/handoff.js
+          node --check whatsapp-worker/watchdog.js
 
       - name: Verify PostgreSQL ESM import
         working-directory: whatsapp-worker
