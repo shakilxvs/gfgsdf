@@ -30,7 +30,7 @@ The worker uses a self-renewing GitHub Actions handoff. Each worker session runs
 
 The worker checks the Neon outbound queue every 5 minutes while connected. This intentionally keeps Neon Free able to scale to zero between checks instead of holding a database connection open continuously.
 
-A separate lightweight watchdog runs every 10 minutes. It checks the recent worker run history and dispatches a replacement only when no healthy active or pending worker exists. It recovers failed runs with a short backoff and refreshes stale queued runs. A short successful exit is treated as a possible WhatsApp logout/session conflict and is not automatically restarted, to avoid a QR/reconnect loop.
+A separate lightweight watchdog runs every 10 minutes and also bootstraps on relevant updates to its default-branch workflow files. It checks recent worker run history and dispatches a replacement only when no healthy active or pending worker exists. It recovers failed runs with a short backoff and refreshes stale queued runs. A short successful exit is treated as a possible WhatsApp logout/session conflict and is not automatically restarted, to avoid a QR/reconnect loop.
 
 The worker concurrency group is `taskxvs-whatsapp-cloud-worker` with `cancel-in-progress: false`. It must remain enabled so only one Baileys sender session runs at a time. Do not create a second worker service or run a second manual session while the automatic worker is active.
 
