@@ -3,7 +3,7 @@ name: TaskXVS Free WhatsApp Cloud Worker
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 */6 * * *" # Every six hours at minute 17 UTC to avoid the top-of-hour queue.
+    - cron: "17 * * * *" # Hourly handoff trigger; keep the latest replacement queued away from minute 0.
 
 concurrency:
   group: taskxvs-whatsapp-cloud-worker

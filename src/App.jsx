@@ -798,8 +798,8 @@ function WorkspaceSettings({onClose,notify,emailConfigured,requestConfirmation})
       </div>}
       <div className="whatsapp-cloud-steps">
         <strong>Automatic delivery schedule</strong>
-        <p>GitHub starts the worker automatically every 6 hours, around 17 minutes past the hour (UTC). Each session runs for up to 5 hours 45 minutes and checks the message queue every 5 minutes while connected. You do not need to start it manually for normal operation.</p>
-        <p>The planned gap between sessions is about 15 minutes, plus any GitHub scheduling delay. This is not a guaranteed 24/7 connection. For an immediate restart, use the manual Run workflow option.</p>
+        <p>GitHub checks for a worker handoff every hour, at 17 minutes past the hour (UTC). Each session runs for up to 5 hours 45 minutes and checks the message queue every 5 minutes while connected. The hourly trigger keeps the latest replacement queued while a session is active, and the concurrency lock prevents two WhatsApp sessions from running together. You do not need to start it manually for normal operation.</p>
+        <p>When a session ends, the queued replacement should start automatically rather than waiting for another six-hour window. GitHub can still delay or drop scheduled triggers, so brief gaps remain possible. This is not a guaranteed 24/7 connection. For an immediate restart, use the manual Run workflow option.</p>
       </div>
       {error&&<div className="form-error">{error}</div>}
       <div className="modal-actions">
