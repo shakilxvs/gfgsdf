@@ -17,7 +17,7 @@ function timestamp(value) {
  */
 export function evaluateWorkerRuns(runs, {
   now = Date.now(),
-  activeHandoffThresholdMs = 338 * 60 * 1000,
+  activeHandoffThresholdMs = 342 * 60 * 1000,
   pendingStaleThresholdMs = 20 * 60 * 1000,
   completedGraceMs = 3 * 60 * 1000,
   fullSessionMinimumMs = 330 * 60 * 1000,
