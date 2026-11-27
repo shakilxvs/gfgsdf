@@ -134,7 +134,7 @@ test("reports rejected GitHub workflow dispatch requests", async () => {
         text: async () => "Resource not accessible by integration"
       })
     }),
-    /dispatch failed \(403\)/
+    /rejected the WhatsApp worker handoff \(403\)/
   );
 });
 
