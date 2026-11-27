@@ -30,7 +30,7 @@ function run({
 test("does not dispatch when a replacement is already queued", () => {
   const decision = evaluateWorkerRuns([
     run({ status: "queued", conclusion: null, createdMinutesAgo: 2 }),
-    run({ status: "in_progress", conclusion: null, startedMinutesAgo: 340, id: "2" })
+    run({ status: "in_progress", conclusion: null, startedMinutesAgo: 343, id: "2" })
   ], { now: NOW });
 
   assert.equal(decision.shouldDispatch, false);
