@@ -22,6 +22,8 @@ The value must be the Neon connection string for database `taskxvs` using role `
 
 Never commit the connection string, expose it in Actions variables, print it in logs, or paste it into an issue or pull request.
 
+The worker workflow also receives the short-lived repository `GITHUB_TOKEN` through the `github.token` context, with only `actions: write` and `contents: read` permissions. It uses this token to dispatch the next `workflow_dispatch` run on `main`; no personal access token or additional secret is required. The token is never written to logs.
+
 ## Runtime behavior
 
 The worker uses a self-renewing GitHub Actions handoff. Each worker session runs for up to 345 minutes (5 hours 45 minutes), and about 5 minutes before it exits, it uses its scoped GitHub Actions token to queue the next `workflow_dispatch` run on `main`. The worker then exits normally, and GitHub starts the queued replacement when the active run releases the concurrency lock.
