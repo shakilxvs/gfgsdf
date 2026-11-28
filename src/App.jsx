@@ -14,6 +14,7 @@ import {
   Send, MessageCircle, UserRound, LockKeyhole, MailCheck, BellRing, Paperclip, Download
 } from "lucide-react";
 import { smartSortTasks } from "./taskOrdering.js";
+import { businessFaviconUrl } from "../businessWebsite.js";
 import { moveBusinessInOrder } from "./businessOrdering.js";
 import { RichTextEditor, RichTextView, taskDescriptionPlainText } from "./TaskRichText.jsx";
 function taskDescriptionPreview(value) {
@@ -460,17 +461,29 @@ function CategoryManager({business,categories,onClose,onAdd,onEdit,onDelete}) {
   </Modal>;
 }
 
+function BusinessMark({business}) {
+  const faviconUrl=businessFaviconUrl(business?.website_url);
+  const [failedUrl,setFailedUrl]=useState("");
+  if(!faviconUrl||failedUrl===faviconUrl){
+    return <span className="business-bullet">{String(business?.name||"?").slice(0,1).toUpperCase()}</span>;
+  }
+  return <span className="business-bullet business-bullet-logo">
+    <img src={faviconUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={()=>setFailedUrl(faviconUrl)}/>
+  </span>;
+}
+
 function BusinessManager({businesses,emailConfigured,isOwner,currentUserId,onClose,onAdd,onRename,onArchive,onDelete}) {
   const [name,setName]=useState("");
   const [email,setEmail]=useState("");
   const [emailEnabled,setEmailEnabled]=useState(false);
+  const [websiteUrl,setWebsiteUrl]=useState("");
   const [error,setError]=useState("");
   const [editing,setEditing]=useState(null);
-  const [draft,setDraft]=useState({name:"",notification_email:"",email_notifications:false});
+  const [draft,setDraft]=useState({name:"",notification_email:"",email_notifications:false,website_url:""});
   const [deleting,setDeleting]=useState(null);
   const [confirmation,setConfirmation]=useState("");
-  async function add(e){e.preventDefault();setError("");try{await onAdd(name,email,emailEnabled);setName("");setEmail("");setEmailEnabled(false);}catch(err){setError(err.message);}}
-  function edit(b){setEditing(b.id);setDraft({name:b.name,notification_email:b.notification_email||"",email_notifications:Boolean(b.email_notifications)});setError("");}
+  async function add(e){e.preventDefault();setError("");try{await onAdd(name,email,emailEnabled,websiteUrl);setName("");setEmail("");setEmailEnabled(false);setWebsiteUrl("");}catch(err){setError(err.message);}}
+  function edit(b){setEditing(b.id);setDraft({name:b.name,notification_email:b.notification_email||"",email_notifications:Boolean(b.email_notifications),website_url:b.website_url||""});setError("");}
   async function saveEdit(e){e.preventDefault();setError("");try{await onRename(editing,draft);setEditing(null);}catch(err){setError(err.message);}}
   async function confirmDelete(e){e.preventDefault();if(confirmation.trim()!==deleting.name){setError("Enter the exact business name to confirm.");return;}try{await onDelete(deleting);setDeleting(null);setConfirmation("");setError("");}catch(err){setError(err.message);}}
   return <Modal title="Businesses" subtitle={isOwner?"Manage business details and task notifications.":"Manage the businesses you created and their notifications."} onClose={onClose} wide>
@@ -480,6 +493,7 @@ function BusinessManager({businesses,emailConfigured,isOwner,currentUserId,onClo
       <div className="form-grid">
         <label className="field"><span>Business name</span><input value={name} onChange={e=>setName(e.target.value)} maxLength={60} placeholder="Business name" required/></label>
         <label className="field"><span>Notification email(s)</span><input value={email} onChange={e=>setEmail(e.target.value)} placeholder="team@example.com"/></label>
+        <label className="field"><span>Website URL <i>Optional</i></span><input type="url" value={websiteUrl} onChange={e=>setWebsiteUrl(e.target.value)} placeholder="https://example.com" autoComplete="url"/></label>
       </div>
       <label className="inline-check"><input type="checkbox" checked={emailEnabled} onChange={e=>setEmailEnabled(e.target.checked)}/> Email task activity for this business</label>{!isOwner&&<p className="form-hint">Only you and the workspace owner can access a business you create.</p>}
       <div className="modal-actions"><Button disabled={!name.trim()}><Plus size={15}/> Add business</Button></div>
@@ -494,6 +508,7 @@ function BusinessManager({businesses,emailConfigured,isOwner,currentUserId,onClo
       {canEdit&&editing===b.id&&<form className="business-inline-edit" onSubmit={saveEdit}>
         <label className="field"><span>Business name</span><input value={draft.name} onChange={e=>setDraft(d=>({...d,name:e.target.value}))} required/></label>
         <label className="field"><span>Notification email(s)</span><input value={draft.notification_email} onChange={e=>setDraft(d=>({...d,notification_email:e.target.value}))} placeholder="team@example.com"/></label>
+        <label className="field"><span>Website URL <i>Optional</i></span><input type="url" value={draft.website_url} onChange={e=>setDraft(d=>({...d,website_url:e.target.value}))} placeholder="https://example.com" autoComplete="url"/></label>
         <label className="inline-check"><input type="checkbox" checked={draft.email_notifications} onChange={e=>setDraft(d=>({...d,email_notifications:e.target.checked}))}/> Send task notifications</label>
         <div className="modal-actions"><Button size="small" variant="ghost" type="button" onClick={()=>setEditing(null)}>Cancel</Button><Button size="small">Save</Button></div>
       </form>}
@@ -1073,7 +1088,7 @@ function TaskDetails({task,business,category,today,canWrite,onClose,onEdit,onCom
                     <span><strong>{item.file_name}</strong><small>{formatAttachmentSize(item.size_bytes)} · Preview</small></span>
                     {!isImage&&<Eye size={15}/>}
                   </button>
-                  <a className="task-detail-attachment-download" href={downloadUrl} aria-label={"Download "+item.file_name} title="Download original"><Download size={15}/></a>
+                  <a className="task-detail-attachment-download" href={downloadUrl} aria-label={"Download "+item.file_name} title="Download original" onClick={event=>event.stopPropagation()}><Download size={15}/></a>
                 </div>;
               })}
             </div>
@@ -1302,7 +1317,7 @@ function App() {
       try{localStorage.setItem("taskxvs_activity_seen",seen);}catch{}
     } catch(err){notify(err.message);}
   }
-  async function addBusiness(name,notification_email,email_notifications){const b=await api("/api/businesses",{method:"POST",body:JSON.stringify({name,notification_email,email_notifications})});await refresh();setActive(b.id);notify("Business added");}
+  async function addBusiness(name,notification_email,email_notifications,website_url){const b=await api("/api/businesses",{method:"POST",body:JSON.stringify({name,notification_email,email_notifications,website_url})});await refresh();setActive(b.id);notify("Business added");}
   async function renameBusiness(id,patch){const next=await api(`/api/businesses/${id}`,{method:"PATCH",body:JSON.stringify(patch)});setBusinesses(bs=>bs.map(x=>x.id===id?next:x));notify("Business updated");}
   async function archiveBusiness(b){const next=await api(`/api/businesses/${b.id}`,{method:"PATCH",body:JSON.stringify({archived:!b.archived})});setBusinesses(bs=>bs.map(x=>x.id===b.id?next:x));if(next.archived&&active===b.id)setActive("overview");notify(next.archived?"Business archived":"Business restored");}
   async function deleteBusiness(b){await api(`/api/businesses/${b.id}`,{method:"DELETE"});setBusinesses(bs=>bs.filter(x=>x.id!==b.id));setCategories(cs=>cs.filter(c=>c.business_id!==b.id));setTasks(ts=>ts.filter(t=>t.business_id!==b.id));if(active===b.id)setActive("overview");notify("Business deleted");}
@@ -1519,7 +1534,7 @@ function App() {
           onDrop={event=>dropBusinessOrder(event,b.id)}
           onDragEnd={finishBusinessDrag}
           title={b.name}
-        ><span className="business-bullet">{b.name.slice(0,1)}</span><span className="sidebar-business-name">{b.name}</span><span className="sidebar-count">{pendingFor(b.id)}</span></button>)}
+        ><BusinessMark business={b}/><span className="sidebar-business-name">{b.name}</span><span className="sidebar-count">{pendingFor(b.id)}</span></button>)}
       </nav>
       <div className="sidebar-bottom">
         {isOwner&&<button className="sidebar-link sidebar-admin-link" title="Settings" onClick={()=>setSettingsOpen(true)}><Settings2 size={17}/><span>Settings</span></button>}
