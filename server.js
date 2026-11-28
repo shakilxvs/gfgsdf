@@ -1199,19 +1199,25 @@ app.patch("/api/businesses/:id", requireAuth, async (req,res,next)=>{
     const email=req.body?.notification_email===undefined?null:(String(req.body.notification_email||"").trim()||null);
     const enabled=typeof req.body?.email_notifications==="boolean"?req.body.email_notifications:null;
     const archived=typeof req.body?.archived==="boolean"?req.body.archived:null;
+    let websiteUrl=null;
+    if(req.body?.website_url!==undefined){
+      try{websiteUrl=normalizeBusinessWebsiteUrl(req.body.website_url);}
+      catch(error){return res.status(400).json({error:error.message});}
+    }
     if(name!==null&&(!name||name.length>60))return res.status(400).json({error:"Business name must be between 1 and 60 characters."});
     if(req.body?.notification_email!==undefined&&!validEmailList(email))return res.status(400).json({error:"Enter up to 10 valid notification email addresses."});
     const result=await pool.query(
       `UPDATE businesses SET name=COALESCE($2,name),
        notification_email=CASE WHEN $3::boolean THEN $4 ELSE notification_email END,
        email_notifications=COALESCE($5,email_notifications),
-       archived=COALESCE($6,archived)
+       archived=COALESCE($6,archived),
+       website_url=CASE WHEN $7::boolean THEN $8 ELSE website_url END
        WHERE id=$1 RETURNING *`,
-      [req.params.id,name,req.body?.notification_email!==undefined,email,enabled,archived]
+      [req.params.id,name,req.body?.notification_email!==undefined,email,enabled,archived,req.body?.website_url!==undefined,websiteUrl]
     );
     res.json(result.rows[0]);
     const eventType=typeof archived==="boolean"?(archived?"business_archived":"business_restored"):"business_updated";
-    recordActivity(req,{event_type:eventType,entity_type:"business",entity_id:business.id,business_id:business.id,title:`${eventType==="business_archived"?"Archived":eventType==="business_restored"?"Restored":"Updated"} business ${result.rows[0].name}`,details:{before:{name:business.name,notification_email:business.notification_email,email_notifications:business.email_notifications},after:{name:result.rows[0].name,notification_email:result.rows[0].notification_email,email_notifications:result.rows[0].email_notifications}}});
+    recordActivity(req,{event_type:eventType,entity_type:"business",entity_id:business.id,business_id:business.id,title:`${eventType==="business_archived"?"Archived":eventType==="business_restored"?"Restored":"Updated"} business ${result.rows[0].name}`,details:{before:{name:business.name,notification_email:business.notification_email,email_notifications:business.email_notifications,website_url:business.website_url},after:{name:result.rows[0].name,notification_email:result.rows[0].notification_email,email_notifications:result.rows[0].email_notifications,website_url:result.rows[0].website_url}}});
   }catch(e){
     if(e.code==="23505")return res.status(409).json({error:"A business with that name already exists."});
     next(e);
