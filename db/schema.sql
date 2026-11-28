@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS businesses (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL CHECK (char_length(btrim(name)) BETWEEN 1 AND 60),
+  website_url text,
   position integer NOT NULL DEFAULT 0,
   archived boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now(),

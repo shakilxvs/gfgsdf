@@ -3338,3 +3338,22 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .modal::-webkit-scrollbar-thumb:hover {
   background:#a9aaa3;
 }
+
+
+/* Business website favicon marks in the sidebar. */
+.business-bullet-logo { overflow:hidden; background:#fff; border:1px solid rgba(0,0,0,.07); }
+.business-bullet-logo img { display:block; width:100%; height:100%; padding:3px; object-fit:contain; border-radius:inherit; }
+
+/* Attachment downloads overlay the preview card, preserving its width. */
+.task-detail-attachment-card { display:block; min-width:0; }
+.task-detail-attachment-card .task-detail-image-preview,
+.task-detail-attachment-card .task-detail-document { display:grid; width:100%; min-width:0; }
+.task-detail-attachment-card .task-detail-document { padding:12px 44px 12px 10px; }
+.task-detail-attachment-download {
+  position:absolute; top:8px; right:8px; z-index:2;
+  display:grid; width:29px; height:29px; place-items:center;
+  border:1px solid rgba(220,226,219,.95); border-radius:9px;
+  background:rgba(255,255,255,.94); color:#66796a;
+  box-shadow:0 2px 7px rgba(25,35,27,.08); backdrop-filter:blur(5px);
+}
+.task-detail-attachment-download:hover { background:#f4f8f3; color:#41684b; }
