@@ -1136,6 +1136,53 @@ app.post("/api/businesses", requireAuth, async (req, res, next) => {
     next(e);
   }finally{client.release();}
 });
+app.post("/api/businesses/reorder", requireAuth, requireOwner, async (req,res,next)=>{
+  const submitted=req.body?.business_ids;
+  if(!Array.isArray(submitted)||submitted.length>200||submitted.some(id=>typeof id!=="string"||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))){
+    return res.status(400).json({error:"Provide a valid ordered list of business IDs."});
+  }
+  if(new Set(submitted).size!==submitted.length){
+    return res.status(400).json({error:"A business can only appear once in the order."});
+  }
+
+  const client=await pool.connect();
+  try{
+    await client.query("BEGIN");
+    const current=await client.query(
+      "SELECT id FROM businesses WHERE archived=false ORDER BY position,lower(name) FOR UPDATE"
+    );
+    const currentIds=current.rows.map(row=>row.id);
+    if(currentIds.length!==submitted.length||currentIds.some(id=>!submitted.includes(id))){
+      await client.query("ROLLBACK");
+      return res.status(409).json({error:"The business list changed. Refresh the page and try again."});
+    }
+
+    await client.query(
+      "UPDATE businesses AS b SET position=ordered.position FROM unnest($1::uuid[]) WITH ORDINALITY AS ordered(id,position) WHERE b.id=ordered.id",
+      [submitted]
+    );
+    await client.query(
+      `WITH archived_order AS (
+         SELECT id,row_number() OVER (ORDER BY position,lower(name)) AS row_number
+         FROM businesses WHERE archived=true
+       )
+       UPDATE businesses AS b
+       SET position=$1+archived_order.row_number
+       FROM archived_order WHERE b.id=archived_order.id`,
+      [submitted.length]
+    );
+
+    const ordered=await client.query("SELECT * FROM businesses WHERE archived=false ORDER BY position,lower(name)");
+    await client.query("COMMIT");
+    res.json({businesses:ordered.rows});
+  }catch(error){
+    await client.query("ROLLBACK").catch(()=>{});
+    next(error);
+  }finally{
+    client.release();
+  }
+});
+
 app.patch("/api/businesses/:id", requireAuth, async (req,res,next)=>{
   try{
     const current=await pool.query("SELECT * FROM businesses WHERE id=$1",[req.params.id]);
