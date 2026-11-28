@@ -14,6 +14,7 @@ export function moveBusinessInOrder(businesses, sourceId, targetId) {
 
   const next = [...businesses];
   const [moved] = next.splice(sourceIndex, 1);
-  next.splice(targetIndex, 0, moved);
+  const insertionIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
+  next.splice(insertionIndex, 0, moved);
   return next;
 }
