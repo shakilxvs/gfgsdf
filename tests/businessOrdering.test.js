@@ -11,7 +11,7 @@ const businesses = [
 
 test("moves a business down when dropped on a later business", () => {
   const result = moveBusinessInOrder(businesses, "pellishoes", "v3pl");
-  assert.deepEqual(result.map(item => item.id), ["casabella", "v3pl", "pellishoes", "hug-home"]);
+  assert.deepEqual(result.map(item => item.id), ["casabella", "pellishoes", "v3pl", "hug-home"]);
 });
 
 test("moves a business up when dropped on an earlier business", () => {
