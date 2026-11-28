@@ -3209,3 +3209,132 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
     justify-self:start;
   }
 }
+
+
+/* Shared business ordering: drag from either navigation surface. */
+.business-tab[draggable="true"],
+.sidebar-business-list .sidebar-link[draggable="true"] {
+  cursor:grab;
+  user-select:none;
+  -webkit-user-select:none;
+}
+.business-tab[draggable="true"]:active,
+.sidebar-business-list .sidebar-link[draggable="true"]:active {
+  cursor:grabbing;
+}
+.business-tab.is-dragging,
+.sidebar-business-list .sidebar-link.is-dragging {
+  opacity:.42;
+}
+.business-tab.is-drop-target {
+  background:#f0f0ec;
+  box-shadow:inset 0 0 0 1px #d8d8d1;
+}
+.sidebar-business-list .sidebar-link.is-drop-target {
+  background:#f0f0ed;
+  box-shadow:inset 0 0 0 1px #deded8;
+}
+.sidebar-business-add {
+  width:29px!important;
+  height:29px!important;
+  display:grid;
+  place-items:center;
+  border:0;
+  border-radius:50%!important;
+  background:#f0f0ed!important;
+  color:#686861!important;
+  cursor:pointer;
+}
+.sidebar-business-add:hover {
+  background:#e7e7e2!important;
+  color:#222!important;
+}
+.sidebar-account-row {
+  display:flex;
+  align-items:center;
+  gap:4px;
+  min-width:0;
+}
+.sidebar-account-row .owner-row {
+  flex:1 1 auto;
+  min-width:0;
+  width:auto;
+  padding-right:5px;
+}
+.sidebar-account-row .owner-row > div:last-child {
+  min-width:0;
+}
+.sidebar-account-row .owner-row strong,
+.sidebar-account-row .owner-row small {
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.sidebar-logout-icon {
+  width:34px;
+  height:34px;
+  flex:0 0 34px;
+  display:grid;
+  place-items:center;
+  border:0;
+  border-radius:10px;
+  background:transparent;
+  color:#686861;
+  cursor:pointer;
+  transition:background .16s,color .16s;
+}
+.sidebar-logout-icon:hover {
+  background:#f0f0ed;
+  color:#222;
+}
+.sidebar-collapsed .sidebar-account-row {
+  flex-direction:column;
+  gap:2px;
+}
+.sidebar-collapsed .sidebar-account-row .owner-row {
+  width:100%;
+  flex:0 0 auto;
+  justify-content:center;
+  padding:5px 0 8px;
+}
+.sidebar-collapsed .sidebar-logout-icon {
+  width:34px;
+  height:30px;
+  flex-basis:30px;
+}
+
+/* Keep scrollbars inside their rounded scroll surfaces. */
+.sidebar {
+  overflow:hidden;
+}
+.sidebar-business-list {
+  scrollbar-gutter:stable;
+  padding-right:5px;
+}
+.sidebar-business-list::-webkit-scrollbar-track {
+  margin-block:6px;
+}
+.modal {
+  overflow-x:hidden;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+  scrollbar-width:thin;
+  scrollbar-color:#c9c9c3 transparent;
+}
+.modal::-webkit-scrollbar {
+  width:7px;
+}
+.modal::-webkit-scrollbar-track {
+  margin-block:14px;
+  background:transparent;
+  border-radius:999px;
+}
+.modal::-webkit-scrollbar-thumb {
+  background:#c9c9c3;
+  border:2px solid #fff;
+  border-radius:999px;
+}
+.modal::-webkit-scrollbar-thumb:hover {
+  background:#a9aaa3;
+}

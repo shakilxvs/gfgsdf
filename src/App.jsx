@@ -14,6 +14,7 @@ import {
   Send, MessageCircle, UserRound, LockKeyhole, MailCheck, BellRing, Paperclip, Download
 } from "lucide-react";
 import { smartSortTasks } from "./taskOrdering.js";
+import { moveBusinessInOrder } from "./businessOrdering.js";
 import { RichTextEditor, RichTextView, taskDescriptionPlainText } from "./TaskRichText.jsx";
 function taskDescriptionPreview(value) {
   const plain = taskDescriptionPlainText(value).replace(/\\s+/g, " ").trim();
@@ -1162,6 +1163,10 @@ function App() {
   const [confirmDialog,setConfirmDialog]=useState(null);
   const confirmResolver=useRef(null);
   const requestedTaskHandled=useRef(false);
+  const businessDragRef=useRef(null);
+  const businessOrderSaveRef=useRef(false);
+  const [draggingBusinessId,setDraggingBusinessId]=useState("");
+  const [businessDropTargetId,setBusinessDropTargetId]=useState("");
   const [mobileNav,setMobileNav]=useState(false);
   const today=todayDhaka();
 
@@ -1341,6 +1346,54 @@ function App() {
   const activeCanWrite=active==="overview"?isOwner:canWriteBusiness(active);
   const writableBusinesses=businesses.filter(b=>!b.archived&&canWriteBusiness(b.id));
   const canCreateBusiness=isOwner||writableBusinesses.length>0;
+
+  function startBusinessDrag(event,businessId) {
+    if(!isOwner||businessOrderSaveRef.current){
+      event.preventDefault();
+      return;
+    }
+    businessDragRef.current=businessId;
+    setDraggingBusinessId(businessId);
+    event.dataTransfer.effectAllowed="move";
+    event.dataTransfer.setData("text/plain",businessId);
+  }
+  function overBusinessDrag(event,businessId) {
+    if(!isOwner||!businessDragRef.current||businessDragRef.current===businessId)return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect="move";
+    setBusinessDropTargetId(current=>current===businessId?current:businessId);
+  }
+  async function dropBusinessOrder(event,targetId) {
+    event.preventDefault();
+    const sourceId=businessDragRef.current||event.dataTransfer.getData("text/plain");
+    businessDragRef.current=null;
+    setDraggingBusinessId("");
+    setBusinessDropTargetId("");
+    if(!isOwner||!sourceId||sourceId===targetId||businessOrderSaveRef.current)return;
+    const previous=businesses.filter(b=>!b.archived);
+    const reordered=moveBusinessInOrder(previous,sourceId,targetId);
+    if(reordered.every((business,index)=>business.id===previous[index]?.id))return;
+    setBusinesses(reordered);
+    businessOrderSaveRef.current=true;
+    try{
+      const result=await api("/api/businesses/reorder",{
+        method:"POST",
+        body:JSON.stringify({business_ids:reordered.map(b=>b.id)})
+      });
+      if(Array.isArray(result.businesses))setBusinesses(result.businesses);
+    }catch(error){
+      setBusinesses(previous);
+      notify(error.message||"Could not save the business order.");
+    }finally{
+      businessOrderSaveRef.current=false;
+    }
+  }
+  function finishBusinessDrag() {
+    businessDragRef.current=null;
+    setDraggingBusinessId("");
+    setBusinessDropTargetId("");
+  }
+
   const pendingFor = id => tasks.filter(t=>t.business_id===id&&isOpen(t)).length;
   const progressFor = id => {
     const related=tasks.filter(t=>t.business_id===id);
@@ -1445,16 +1498,38 @@ function App() {
       <div className="sidebar-business-heading">
         <span>BUSINESSES</span>
         <div className="sidebar-business-tools">
-          {isOwner&&<button className="sidebar-manage-businesses" onClick={()=>setModal("businesses")} aria-label="Manage businesses"><Settings2 size={14}/><span>Manage</span></button>}
-          {canCreateBusiness&&<button className="sidebar-business-add" onClick={()=>setModal("businesses")} aria-label="Add business"><Plus size={16}/></button>}
+          {(isOwner||canCreateBusiness)&&<button
+            type="button"
+            className="sidebar-business-add"
+            onClick={()=>setModal("businesses")}
+            aria-label="Manage businesses"
+            title="Manage businesses"
+          ><Settings2 size={16}/></button>}
         </div>
       </div>
-      <nav className="sidebar-business-list">{businesses.filter(b=>!b.archived).map(b=><button key={b.id} className={`sidebar-link ${active===b.id?"is-active":""}`} onClick={()=>tabTo(b.id)} title={b.name}><span className="business-bullet">{b.name.slice(0,1)}</span><span className="sidebar-business-name">{b.name}</span><span className="sidebar-count">{pendingFor(b.id)}</span></button>)}</nav>
-      {canCreateBusiness&&<button className="sidebar-add-business" title="Add business" onClick={()=>setModal("businesses")}><Plus size={15}/><span>Add business</span></button>}
+      <nav className="sidebar-business-list" aria-label="Business workspaces">
+        {businesses.filter(b=>!b.archived).map(b=><button
+          type="button"
+          key={b.id}
+          draggable={isOwner}
+          className={`sidebar-link ${active===b.id?"is-active":""} ${draggingBusinessId===b.id?"is-dragging":""} ${businessDropTargetId===b.id?"is-drop-target":""}`}
+          onClick={()=>tabTo(b.id)}
+          onDragStart={event=>startBusinessDrag(event,b.id)}
+          onDragOver={event=>overBusinessDrag(event,b.id)}
+          onDrop={event=>dropBusinessOrder(event,b.id)}
+          onDragEnd={finishBusinessDrag}
+          title={b.name}
+        ><span className="business-bullet">{b.name.slice(0,1)}</span><span className="sidebar-business-name">{b.name}</span><span className="sidebar-count">{pendingFor(b.id)}</span></button>)}
+      </nav>
       <div className="sidebar-bottom">
         {isOwner&&<button className="sidebar-link sidebar-admin-link" title="Settings" onClick={()=>setSettingsOpen(true)}><Settings2 size={17}/><span>Settings</span></button>}
-        <button type="button" className="owner-row owner-row-button" onClick={openAccount} title="My account"><div className="owner-avatar">{(sessionUser?.displayName||"X").slice(0,1).toUpperCase()}</div><div><strong>{sessionUser?.displayName||"User"}</strong><small>{isOwner?"Workspace owner":"Team member"}</small></div></button>
-        <button className="sidebar-link logout-link" title="Sign out" onClick={logout}><LogOut size={16}/><span>Sign out</span></button>
+        <div className="sidebar-account-row">
+          <button type="button" className="owner-row owner-row-button" onClick={openAccount} title="My account">
+            <div className="owner-avatar">{(sessionUser?.displayName||"X").slice(0,1).toUpperCase()}</div>
+            <div><strong>{sessionUser?.displayName||"User"}</strong><small>{isOwner?"Workspace owner":"Team member"}</small></div>
+          </button>
+          <button type="button" className="sidebar-logout-icon" title="Sign out" aria-label="Sign out" onClick={logout}><LogOut size={17}/></button>
+        </div>
       </div>
     </aside>
     {mobileNav&&<button className="mobile-scrim" onClick={()=>setMobileNav(false)} aria-label="Close menu"/>}
@@ -1464,7 +1539,18 @@ function App() {
         <nav className="business-tabs" aria-label="Business workspaces">
           <div className="business-tabs-scroll">
             <button className={`business-tab ${active==="overview"&&!search?"tab-active":""}`} onClick={()=>tabTo("overview")}><LayoutDashboard size={17}/><span>Overview</span></button>
-            {businesses.filter(b=>!b.archived).map(b=><button key={b.id} title={b.name} className={`business-tab ${active===b.id&&!search?"tab-active":""}`} onClick={()=>tabTo(b.id)}><span className="tab-label">{b.name}<span className="tab-counter">{pendingFor(b.id)}</span></span></button>)}
+            {businesses.filter(b=>!b.archived).map(b=><button
+              type="button"
+              key={b.id}
+              title={b.name}
+              draggable={isOwner}
+              className={`business-tab ${active===b.id&&!search?"tab-active":""} ${draggingBusinessId===b.id?"is-dragging":""} ${businessDropTargetId===b.id?"is-drop-target":""}`}
+              onClick={()=>tabTo(b.id)}
+              onDragStart={event=>startBusinessDrag(event,b.id)}
+              onDragOver={event=>overBusinessDrag(event,b.id)}
+              onDrop={event=>dropBusinessOrder(event,b.id)}
+              onDragEnd={finishBusinessDrag}
+            ><span className="tab-label">{b.name}<span className="tab-counter">{pendingFor(b.id)}</span></span></button>)}
           </div>
         </nav>
         <div className="topbar-right">
