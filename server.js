@@ -1113,6 +1113,9 @@ app.post("/api/businesses", requireAuth, async (req, res, next) => {
     const name=String(req.body?.name||"").trim();
     const email=String(req.body?.notification_email||"").trim()||null;
     const emailEnabled=Boolean(req.body?.email_notifications);
+    let websiteUrl=null;
+    try{websiteUrl=normalizeBusinessWebsiteUrl(req.body?.website_url);}
+    catch(error){return res.status(400).json({error:error.message});}
     if(!name||name.length>60)return res.status(400).json({error:"Business name must be between 1 and 60 characters."});
     if(!validEmailList(email))return res.status(400).json({error:"Enter up to 10 valid notification email addresses separated by commas."});
     if(req.auth.role==="member"){
@@ -1121,8 +1124,8 @@ app.post("/api/businesses", requireAuth, async (req, res, next) => {
     }
     await client.query("BEGIN");
     const created=await client.query(
-      "INSERT INTO businesses (name,notification_email,email_notifications,created_by_user_id,position) VALUES ($1,$2,$3,$4,COALESCE((SELECT max(position)+1 FROM businesses),1)) RETURNING *",
-      [name,email,emailEnabled,req.auth.role==="member"?req.auth.id:null]
+      "INSERT INTO businesses (name,notification_email,email_notifications,website_url,created_by_user_id,position) VALUES ($1,$2,$3,$4,$5,COALESCE((SELECT max(position)+1 FROM businesses),1)) RETURNING *",
+      [name,email,emailEnabled,websiteUrl,req.auth.role==="member"?req.auth.id:null]
     );
     if(req.auth.role==="member"){
       await client.query("INSERT INTO business_assignments (user_id,business_id,permission) VALUES ($1,$2,'write')",[req.auth.id,created.rows[0].id]);
