@@ -493,7 +493,7 @@ function BusinessManager({businesses,emailConfigured,isOwner,currentUserId,onClo
       <div className="form-grid">
         <label className="field"><span>Business name</span><input value={name} onChange={e=>setName(e.target.value)} maxLength={60} placeholder="Business name" required/></label>
         <label className="field"><span>Notification email(s)</span><input value={email} onChange={e=>setEmail(e.target.value)} placeholder="team@example.com"/></label>
-        <label className="field"><span>Website URL <i>Optional</i></span><input type="url" value={websiteUrl} onChange={e=>setWebsiteUrl(e.target.value)} placeholder="https://example.com" autoComplete="url"/></label>
+        <label className="field"><span>Website URL <i>Optional</i></span><input type="text" inputMode="url" value={websiteUrl} onChange={e=>setWebsiteUrl(e.target.value)} placeholder="example.com or https://example.com" autoComplete="url"/></label>
       </div>
       <label className="inline-check"><input type="checkbox" checked={emailEnabled} onChange={e=>setEmailEnabled(e.target.checked)}/> Email task activity for this business</label>{!isOwner&&<p className="form-hint">Only you and the workspace owner can access a business you create.</p>}
       <div className="modal-actions"><Button disabled={!name.trim()}><Plus size={15}/> Add business</Button></div>
@@ -508,7 +508,7 @@ function BusinessManager({businesses,emailConfigured,isOwner,currentUserId,onClo
       {canEdit&&editing===b.id&&<form className="business-inline-edit" onSubmit={saveEdit}>
         <label className="field"><span>Business name</span><input value={draft.name} onChange={e=>setDraft(d=>({...d,name:e.target.value}))} required/></label>
         <label className="field"><span>Notification email(s)</span><input value={draft.notification_email} onChange={e=>setDraft(d=>({...d,notification_email:e.target.value}))} placeholder="team@example.com"/></label>
-        <label className="field"><span>Website URL <i>Optional</i></span><input type="url" value={draft.website_url} onChange={e=>setDraft(d=>({...d,website_url:e.target.value}))} placeholder="https://example.com" autoComplete="url"/></label>
+        <label className="field"><span>Website URL <i>Optional</i></span><input type="text" inputMode="url" value={draft.website_url} onChange={e=>setDraft(d=>({...d,website_url:e.target.value}))} placeholder="example.com or https://example.com" autoComplete="url"/></label>
         <label className="inline-check"><input type="checkbox" checked={draft.email_notifications} onChange={e=>setDraft(d=>({...d,email_notifications:e.target.checked}))}/> Send task notifications</label>
         <div className="modal-actions"><Button size="small" variant="ghost" type="button" onClick={()=>setEditing(null)}>Cancel</Button><Button size="small">Save</Button></div>
       </form>}
