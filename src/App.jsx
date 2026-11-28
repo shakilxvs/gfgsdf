@@ -189,7 +189,7 @@ function Modal({title, subtitle, children, onClose, wide=false}) {
   return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose();}}>
     <section className={`modal ${wide?"modal-wide":""}`} role="dialog" aria-modal="true" aria-label={title}>
       <header className="modal-header"><div><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}</div><IconButton label="Close" onClick={onClose}><X size={18}/></IconButton></header>
-      {children}
+      <div className="modal-body">{children}</div>
     </section>
   </div>;
 }
@@ -1519,7 +1519,7 @@ function App() {
             onClick={()=>setModal("businesses")}
             aria-label="Manage businesses"
             title="Manage businesses"
-          ><Settings2 size={16}/></button>}
+          ><Plus size={17}/></button>}
         </div>
       </div>
       <nav className="sidebar-business-list" aria-label="Business workspaces">

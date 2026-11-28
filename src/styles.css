@@ -3357,3 +3357,38 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   box-shadow:0 2px 7px rgba(25,35,27,.08); backdrop-filter:blur(5px);
 }
 .task-detail-attachment-download:hover { background:#f4f8f3; color:#41684b; }
+
+
+/* Modal frame clips its corners; only the inner content panel scrolls. */
+.modal {
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+  overflow:hidden;
+  overscroll-behavior:contain;
+}
+.modal-header { flex:0 0 auto; }
+.modal-body {
+  flex:1 1 auto;
+  min-height:0;
+  overflow-x:hidden;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+  scrollbar-width:thin;
+  scrollbar-color:#c9c9c3 transparent;
+  padding-right:6px;
+  margin-right:-6px;
+}
+.modal-body::-webkit-scrollbar { width:7px; }
+.modal-body::-webkit-scrollbar-track {
+  margin-block:5px;
+  background:transparent;
+  border-radius:999px;
+}
+.modal-body::-webkit-scrollbar-thumb {
+  background:#c9c9c3;
+  border:2px solid #fff;
+  border-radius:999px;
+}
+.modal-body::-webkit-scrollbar-thumb:hover { background:#a9aaa3; }
