@@ -1158,7 +1158,7 @@ app.post("/api/businesses/reorder", requireAuth, requireOwner, async (req,res,ne
     }
 
     await client.query(
-      "UPDATE businesses AS b SET position=ordered.position FROM unnest($1::uuid[]) WITH ORDINALITY AS ordered(id,position) WHERE b.id=ordered.id",
+      "UPDATE businesses AS b SET position=ordered.position::integer FROM unnest($1::uuid[]) WITH ORDINALITY AS ordered(id,position) WHERE b.id=ordered.id",
       [submitted]
     );
     await client.query(
